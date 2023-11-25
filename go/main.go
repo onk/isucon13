@@ -2,8 +2,8 @@ package main
 
 // ISUCON的な参考: https://github.com/isucon/isucon12-qualify/blob/main/webapp/go/isuports.go#L336
 // sqlx的な参考: https://jmoiron.github.io/sqlx/
-
 import (
+	"context"
 	"fmt"
 	"log"
 	"net"
@@ -20,6 +20,7 @@ import (
 	"github.com/labstack/echo/v4"
 	"github.com/labstack/echo/v4/middleware"
 	echolog "github.com/labstack/gommon/log"
+	"github.com/redis/go-redis/v9"
 )
 
 const (
@@ -108,10 +109,16 @@ func connectDB(logger echo.Logger) (*sqlx.DB, error) {
 }
 
 func initializeHandler(c echo.Context) error {
+	go func() {
+		_ = redisClient.FlushAll(context.Background()).Err()
+	}()
+
 	if out, err := exec.Command("../sql/init.sh").CombinedOutput(); err != nil {
 		c.Logger().Warnf("init.sh failed with err=%s", string(out))
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to initialize: "+err.Error())
 	}
+
+	cacheTagsOnInit()
 
 	c.Request().Header.Add("Content-Type", "application/json;charset=utf-8")
 	return c.JSON(http.StatusOK, InitializeResponse{
@@ -119,7 +126,48 @@ func initializeHandler(c echo.Context) error {
 	})
 }
 
+const TagID2NameCacheRedisKeyPrefix = "tag_id2name:"
+const Name2TagIDCacheRedisKeyPrefix = "name2tag_id:"
+
+func cacheTagsOnInit() {
+	var tagModels []*TagModel
+	err := dbConn.Select(&tagModels, "SELECT * FROM tags")
+	if err != nil {
+		log.Fatalf("failed to cache the tags: %s", err)
+	}
+
+	tagID2NameCacheItems := make([]interface{}, len(tagModels)+2)
+	name2tagIDCacheItems := make([]interface{}, len(tagModels)+2)
+	i := 0
+	for _, tag := range tagModels {
+		tagID2NameCacheItems[i] = fmt.Sprintf("%s%d", TagID2NameCacheRedisKeyPrefix, tag.ID)
+		name2tagIDCacheItems[i] = Name2TagIDCacheRedisKeyPrefix + tag.Name
+		i++
+		tagID2NameCacheItems[i] = tag.Name
+		name2tagIDCacheItems[i] = tag.ID
+		i++
+	}
+	err = redisClient.MSet(context.Background(), tagID2NameCacheItems...).Err()
+	if err != nil {
+		log.Fatalf("failed to make cache for tags: %w", err)
+	}
+	err = redisClient.MSet(context.Background(), name2tagIDCacheItems...).Err()
+	if err != nil {
+		log.Fatalf("failed to make cache for tags: %w", err)
+	}
+}
+
+var redisClient *redis.Client
+
 func main() {
+	redisHost := os.Getenv("REDIS_HOST")
+	if redisHost == "" {
+		redisHost = "127.0.0.1"
+	}
+	redisClient = redis.NewClient(&redis.Options{
+		Addr: redisHost + ":6379",
+	})
+
 	e := echo.New()
 	e.Debug = true
 	e.Logger.SetLevel(echolog.DEBUG)
