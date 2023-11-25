@@ -448,18 +448,13 @@ func fillUserResponseWithoutTx(ctx context.Context, userModel UserModel) (User, 
 		return User{}, err
 	}
 
-	var image []byte
-	if err := dbConn.GetContext(ctx, &image, "SELECT image FROM icons WHERE user_id = ?", userModel.ID); err != nil {
-		if !errors.Is(err, sql.ErrNoRows) {
-			return User{}, err
-		}
-		image, err = os.ReadFile(fallbackImage)
-		if err != nil {
-			return User{}, err
+	var hash string
+	if err := dbConn.GetContext(ctx, &hash, "SELECT hash FROM icons WHERE user_id = ? ORDER BY ID DESC limit 1 ", userModel.ID); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			hash = "d9f8294e9d895f81ce62e73dc7d5dff862a4fa40bd4e0fecf53f7526a8edcac0"
 		}
 	}
-	// FIXME: これは必要である、毎度計算するな。アップロード時にuserのレコードかなんかに入れとけ
-	iconHash := sha256.Sum256(image)
+	// FIXED: hashは必要である、毎度計算するな。アップロード時にuserのレコードかなんかに入れとけ
 
 	user := User{
 		ID:          userModel.ID,
@@ -470,7 +465,7 @@ func fillUserResponseWithoutTx(ctx context.Context, userModel UserModel) (User, 
 			ID:       themeModel.ID,
 			DarkMode: themeModel.DarkMode,
 		},
-		IconHash: fmt.Sprintf("%x", iconHash),
+		IconHash: hash,
 	}
 
 	return user, nil
