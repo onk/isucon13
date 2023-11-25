@@ -541,6 +541,7 @@ func fillLivestreamResponse(ctx context.Context, tx *sqlx.Tx, livestreamModel Li
 
 		for i, tagName := range tagNames {
 			id, _ := strconv.ParseInt(tagIDs[i], 10, 64)
+			fmt.Printf("@@@@@@@@@@@@@@@@@@@@@@@@@@@@ %d => %s", id, tagName.(string))
 			tags[i] = Tag{
 				ID:   id,
 				Name: tagName.(string),
