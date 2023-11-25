@@ -197,15 +197,14 @@ func searchLivestreamsHandler(c echo.Context) error {
 
 	var livestreamModels []*LivestreamModel
 	if c.QueryParam("tag") != "" {
-		// FIXME ちょっとこれ後。nameからtag引いてきてもidは一意じゃね？
-		// タグによる取得
-		var tagIDList []int
-		if err := tx.SelectContext(ctx, &tagIDList, "SELECT id FROM tags WHERE name = ?", keyTagName); err != nil {
+		tagIDStr, err := redisClient.Get(ctx, Name2TagIDCacheRedisKeyPrefix+keyTagName).Result()
+		if err != nil {
 			return echo.NewHTTPError(http.StatusInternalServerError, "failed to get tags: "+err.Error())
 		}
+		tagID, _ := strconv.ParseInt(tagIDStr, 10, 64)
 
 		// FIXME: indexきいてるかみてくれ
-		query, params, err := sqlx.In("SELECT * FROM livestream_tags WHERE tag_id IN (?) ORDER BY livestream_id DESC", tagIDList)
+		query, params, err := sqlx.In("SELECT * FROM livestream_tags WHERE tag_id = ? ORDER BY livestream_id DESC", tagID)
 		if err != nil {
 			return echo.NewHTTPError(http.StatusInternalServerError, "failed to construct IN query: "+err.Error())
 		}
