@@ -98,7 +98,7 @@ func getUserStatisticsHandler(c echo.Context) error {
 	var ranking UserRanking
 	for _, user := range users {
 		var reactions int64
-		// FIXME: N+1
+		// FIXME: N+
 		query := `
 		SELECT COUNT(*) FROM users u
 		INNER JOIN livestreams l ON l.user_id = u.id
