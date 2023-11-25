@@ -155,9 +155,14 @@ func postReactionHandler(c echo.Context) error {
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to incr the leader board: "+err.Error())
 	}
 
-	err = redisClient.Incr(ctx, fmt.Sprintf("%s%d", reactionsCachePrefix, livestreamID)).Err()
+	err = redisClient.Incr(ctx, fmt.Sprintf("%s%d", livestreamReactionsCachePrefix, livestreamID)).Err()
 	if err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, "failed to incr the num of reactions: "+err.Error())
+		return echo.NewHTTPError(http.StatusInternalServerError, "failed to incr the num of livestream reactions: "+err.Error())
+	}
+
+	err = redisClient.Incr(ctx, fmt.Sprintf("%s%d", userReactionsCachePrefix, livestreamUserID)).Err()
+	if err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, "failed to incr the num of user reactions: "+err.Error())
 	}
 
 	return c.JSON(http.StatusCreated, reaction)

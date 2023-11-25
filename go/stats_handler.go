@@ -97,16 +97,15 @@ func getUserStatisticsHandler(c echo.Context) error {
 	rank++ // zrevrankは0はじまり
 
 	// リアクション数
-	// FIXME: これもオンラインでやるのはヤバくね
-	var totalReactions int64
-	query := `SELECT COUNT(*) FROM users u 
-    INNER JOIN livestreams l ON l.user_id = u.id 
-    INNER JOIN reactions r ON r.livestream_id = l.id
-    WHERE u.name = ?
-	`
-	if err := tx.GetContext(ctx, &totalReactions, query, username); err != nil && !errors.Is(err, sql.ErrNoRows) {
-		return echo.NewHTTPError(http.StatusInternalServerError, "failed to count total reactions: "+err.Error())
+	reactionCountStr, err := redisClient.Get(ctx, fmt.Sprintf("%s%d", userReactionsCachePrefix, user.ID)).Result()
+	if err != nil {
+		if err == redis.Nil {
+			reactionCountStr = "0"
+		} else {
+			return echo.NewHTTPError(http.StatusInternalServerError, "failed to retrieve the reaction count: "+err.Error())
+		}
 	}
+	totalReactions, _ := strconv.ParseInt(reactionCountStr, 10, 64)
 
 	// ライブコメント数、チップ合計
 	var totalLivecomments int64
@@ -146,7 +145,7 @@ func getUserStatisticsHandler(c echo.Context) error {
 
 	// お気に入り絵文字
 	var favoriteEmoji string
-	query = `
+	query := `
 	SELECT r.emoji_name
 	FROM users u
 	INNER JOIN livestreams l ON l.user_id = u.id
@@ -216,7 +215,7 @@ func getLivestreamStatisticsHandler(c echo.Context) error {
 	}
 
 	// リアクション数
-	reactionCountStr, err := redisClient.Get(ctx, fmt.Sprintf("%s%d", reactionsCachePrefix, livestreamID)).Result()
+	reactionCountStr, err := redisClient.Get(ctx, fmt.Sprintf("%s%d", livestreamReactionsCachePrefix, livestreamID)).Result()
 	if err != nil {
 		if err == redis.Nil {
 			reactionCountStr = "0"
