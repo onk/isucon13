@@ -25,10 +25,21 @@ type TagsResponse struct {
 func getTagHandler(c echo.Context) error {
 	ctx := c.Request().Context()
 
+	tx, err := dbConn.BeginTxx(ctx, nil)
+	// FIXME selectだけなのにロック取ってる？
+	if err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, "failed to begin new transaction: : "+err.Error()+err.Error())
+	}
+	defer tx.Rollback()
+
 	var tagModels []*TagModel
 	// FIXME これlimitとか無いけどええんか？ もしそうならこれキャッシュしたほうがよさそうげ
-	if err := dbConn.SelectContext(ctx, &tagModels, "SELECT * FROM tags"); err != nil {
+	if err := tx.SelectContext(ctx, &tagModels, "SELECT * FROM tags"); err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to get tags: "+err.Error())
+	}
+
+	if err := tx.Commit(); err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, "failed to commit: "+err.Error())
 	}
 
 	tags := make([]*Tag, len(tagModels))
@@ -56,8 +67,15 @@ func getStreamerThemeHandler(c echo.Context) error {
 
 	username := c.Param("username")
 
+	tx, err := dbConn.BeginTxx(ctx, nil) // FIXME ここもselectだけなのにtxn張ってない？
+	if err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, "failed to begin transaction: "+err.Error())
+	}
+	defer tx.Rollback()
+
 	userModel := UserModel{}
-	err := dbConn.GetContext(ctx, &userModel, "SELECT id FROM users WHERE name = ?", username)
+	// FIXME: 要indexチェック
+	err = tx.GetContext(ctx, &userModel, "SELECT id FROM users WHERE name = ?", username)
 	if errors.Is(err, sql.ErrNoRows) {
 		return echo.NewHTTPError(http.StatusNotFound, "not found user that has the given username")
 	}
@@ -67,8 +85,12 @@ func getStreamerThemeHandler(c echo.Context) error {
 
 	themeModel := ThemeModel{}
 	// FIXME: 要indexチェック
-	if err := dbConn.GetContext(ctx, &themeModel, "SELECT * FROM themes WHERE user_id = ?", userModel.ID); err != nil {
+	if err := tx.GetContext(ctx, &themeModel, "SELECT * FROM themes WHERE user_id = ?", userModel.ID); err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to get user theme: "+err.Error())
+	}
+
+	if err := tx.Commit(); err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, "failed to commit: "+err.Error())
 	}
 
 	theme := Theme{

@@ -46,6 +46,12 @@ func getReactionsHandler(c echo.Context) error {
 		return echo.NewHTTPError(http.StatusBadRequest, "livestream_id in path must be integer")
 	}
 
+	tx, err := dbConn.BeginTxx(ctx, nil)
+	if err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, "failed to begin transaction: "+err.Error())
+	}
+	defer tx.Rollback()
+
 	// FIXME: index
 	query := "SELECT * FROM reactions WHERE livestream_id = ? ORDER BY created_at DESC"
 	if c.QueryParam("limit") != "" {
@@ -57,19 +63,23 @@ func getReactionsHandler(c echo.Context) error {
 	}
 
 	reactionModels := []ReactionModel{}
-	if err := dbConn.SelectContext(ctx, &reactionModels, query, livestreamID); err != nil {
+	if err := tx.SelectContext(ctx, &reactionModels, query, livestreamID); err != nil {
 		return echo.NewHTTPError(http.StatusNotFound, "failed to get reactions")
 	}
 
 	reactions := make([]Reaction, len(reactionModels))
 	for i := range reactionModels {
 		// FIXME: 5N+1
-		reaction, err := fillReactionResponseWithoutTrx(ctx, reactionModels[i])
+		reaction, err := fillReactionResponse(ctx, tx, reactionModels[i])
 		if err != nil {
 			return echo.NewHTTPError(http.StatusInternalServerError, "failed to fill reaction: "+err.Error())
 		}
 
 		reactions[i] = reaction
+	}
+
+	if err := tx.Commit(); err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, "failed to commit: "+err.Error())
 	}
 
 	return c.JSON(http.StatusOK, reactions)
@@ -97,7 +107,6 @@ func postReactionHandler(c echo.Context) error {
 		return echo.NewHTTPError(http.StatusBadRequest, "failed to decode the request body as json")
 	}
 
-	// FIXME: Trxはずせるのでは？
 	tx, err := dbConn.BeginTxx(ctx, nil)
 	if err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to begin transaction: "+err.Error())
@@ -151,35 +160,6 @@ func fillReactionResponse(ctx context.Context, tx *sqlx.Tx, reactionModel Reacti
 		return Reaction{}, err
 	}
 	livestream, err := fillLivestreamResponse(ctx, tx, livestreamModel)
-	if err != nil {
-		return Reaction{}, err
-	}
-
-	reaction := Reaction{
-		ID:         reactionModel.ID,
-		EmojiName:  reactionModel.EmojiName,
-		User:       user,
-		Livestream: livestream,
-		CreatedAt:  reactionModel.CreatedAt,
-	}
-
-	return reaction, nil
-}
-func fillReactionResponseWithoutTrx(ctx context.Context, reactionModel ReactionModel) (Reaction, error) {
-	userModel := UserModel{}
-	if err := dbConn.GetContext(ctx, &userModel, "SELECT * FROM users WHERE id = ?", reactionModel.UserID); err != nil {
-		return Reaction{}, err
-	}
-	user, err := fillUserResponseWithoutTx(ctx, userModel)
-	if err != nil {
-		return Reaction{}, err
-	}
-
-	livestreamModel := LivestreamModel{}
-	if err := dbConn.GetContext(ctx, &livestreamModel, "SELECT * FROM livestreams WHERE id = ?", reactionModel.LivestreamID); err != nil {
-		return Reaction{}, err
-	}
-	livestream, err := fillLivestreamResponseWithoutTrx(ctx, livestreamModel)
 	if err != nil {
 		return Reaction{}, err
 	}
