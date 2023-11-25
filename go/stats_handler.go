@@ -132,16 +132,15 @@ func getUserStatisticsHandler(c echo.Context) error {
 	}
 
 	// 合計視聴者数
-	var viewersCount int64
-	for _, livestream := range livestreams {
-		// FIXME: N+1
-		// FIXME: これをオンラインで集計するのやばそう
-		var cnt int64
-		if err := tx.GetContext(ctx, &cnt, "SELECT COUNT(*) FROM livestream_viewers_history WHERE livestream_id = ?", livestream.ID); err != nil && !errors.Is(err, sql.ErrNoRows) {
-			return echo.NewHTTPError(http.StatusInternalServerError, "failed to get livestream_view_history: "+err.Error())
+	viewersCountStr, err := redisClient.Get(ctx, fmt.Sprintf("%s%d", userViewersCountCachePrefix, user.ID)).Result()
+	if err != nil {
+		if err == redis.Nil {
+			reactionCountStr = "0"
+		} else {
+			return echo.NewHTTPError(http.StatusInternalServerError, "failed to retrieve the viewer count: "+err.Error())
 		}
-		viewersCount += cnt
 	}
+	viewersCount, _ := strconv.ParseInt(viewersCountStr, 10, 64)
 
 	// お気に入り絵文字
 	var favoriteEmoji string
@@ -198,7 +197,7 @@ func getLivestreamStatisticsHandler(c echo.Context) error {
 	rank++ // zrevrankは0はじまり
 
 	// 視聴者数算出
-	viewersCountStr, err := redisClient.Get(ctx, fmt.Sprintf("%s%d", ViewersCountCachePrefix, livestreamID)).Result()
+	viewersCountStr, err := redisClient.Get(ctx, fmt.Sprintf("%s%d", livestreamViewersCountCachePrefix, livestreamID)).Result()
 	if err != nil {
 		if err == redis.Nil {
 			viewersCountStr = "0"

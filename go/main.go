@@ -217,7 +217,8 @@ func cacheTipsOnInit() {
 	}
 }
 
-const ViewersCountCachePrefix = "num_viewers:"
+const livestreamViewersCountCachePrefix = "num_viewers:livestream:"
+const userViewersCountCachePrefix = "num_viewers:user:"
 
 func cacheLivestreamViewersHistoryOnInit() {
 	var livestreamViewers []*LivestreamViewerModel
@@ -227,9 +228,17 @@ func cacheLivestreamViewersHistoryOnInit() {
 	}
 
 	for _, viewer := range livestreamViewers {
-		err := redisClient.Incr(context.Background(), fmt.Sprintf("%s%d", ViewersCountCachePrefix, viewer.LivestreamID)).Err()
+		err := redisClient.Incr(context.Background(), fmt.Sprintf("%s%d", livestreamViewersCountCachePrefix, viewer.LivestreamID)).Err()
 		if err != nil {
 			log.Fatalf("failed to cache the livestreamViewers: %s", err)
+		}
+
+		userID, err := redisClient.Get(context.Background(), fmt.Sprintf("%s%d", livestreamID2UserIDCachePrefix, viewer.LivestreamID)).Result()
+		if err == nil {
+			err := redisClient.Incr(context.Background(), fmt.Sprintf("%s%s", userViewersCountCachePrefix, userID)).Err()
+			if err != nil {
+				log.Fatalf("failed to cache the userReactions: %s", err)
+			}
 		}
 	}
 }
