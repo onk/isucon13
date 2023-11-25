@@ -136,8 +136,8 @@ func cacheTagsOnInit() {
 		log.Fatalf("failed to cache the tags: %s", err)
 	}
 
-	tagID2NameCacheItems := make([]interface{}, len(tagModels)+2)
-	name2tagIDCacheItems := make([]interface{}, len(tagModels)+2)
+	tagID2NameCacheItems := make([]interface{}, len(tagModels)*2)
+	name2tagIDCacheItems := make([]interface{}, len(tagModels)*2)
 	i := 0
 	for _, tag := range tagModels {
 		tagID2NameCacheItems[i] = fmt.Sprintf("%s%d", TagID2NameCacheRedisKeyPrefix, tag.ID)
