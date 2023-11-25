@@ -35,6 +35,9 @@ sudo touch $MYSQL_SLOW_LOG_PATH
 sudo chmod 666 $NGINX_ACCESS_LOG_PATH
 sudo chmod 666 $NGINX_ERROR_LOG_PATH
 sudo chmod 666 $MYSQL_SLOW_LOG_PATH
+sudo chown www-data:adm $NGINX_ACCESS_LOG_PATH
+sudo chown www-data:adm $NGINX_ERROR_LOG_PATH
+sudo chown mysql:mysql $MYSQL_SLOW_LOG_PATH
 EOF
 
     ssh -t "${REMOTE_USER}@${server}" "sudo service isupipe-go stop"
