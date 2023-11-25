@@ -261,7 +261,7 @@ func postLivecommentHandler(c echo.Context) error {
 		if err != nil {
 			return echo.NewHTTPError(http.StatusInternalServerError, "failed to incr the leader board: "+err.Error())
 		}
-		err = redisClient.ZIncrBy(ctx, UserLeaderBoardRedisKey, float64(req.Tip), strconv.FormatInt(userID, 10)).Err()
+		err = redisClient.ZIncrBy(ctx, UserLeaderBoardRedisKey, float64(req.Tip), strconv.FormatInt(livestreamModel.UserID, 10)).Err()
 		if err != nil {
 			return echo.NewHTTPError(http.StatusInternalServerError, "failed to incr the leader board: "+err.Error())
 		}

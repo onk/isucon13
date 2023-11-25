@@ -192,6 +192,11 @@ func reserveLivestreamHandler(c echo.Context) error {
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to make zset entry: "+err.Error())
 	}
 
+	err = redisClient.Set(ctx, fmt.Sprintf("%s%d", livestreamID2UserIDCachePrefix, livestreamID), strconv.FormatInt(userID, 10), 1*time.Hour).Err()
+	if err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, "failed to make livestream2user cache: "+err.Error())
+	}
+
 	return c.JSON(http.StatusCreated, livestream)
 }
 

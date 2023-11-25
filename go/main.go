@@ -125,6 +125,7 @@ func initializeHandler(c echo.Context) error {
 	cacheReactionsOnInit()
 	cacheSpamCountOnInit()
 	cacheLeaderBoardOnInit()
+	cacheLivestreamID2UserIDOnInit()
 
 	c.Request().Header.Add("Content-Type", "application/json;charset=utf-8")
 	return c.JSON(http.StatusOK, InitializeResponse{
@@ -292,7 +293,10 @@ func cacheLeaderBoardOnInit() {
 		log.Fatalf("failed to cache the livestream leader board: %s", err)
 	}
 
+	livestreamID2UserID := make(map[int64]int64)
 	for _, livestream := range livestreams {
+		livestreamID2UserID[livestream.ID] = livestream.UserID
+
 		err := redisClient.ZAdd(context.Background(), LivestreamLeaderBoardRedisKey, redis.Z{
 			Score:  0,
 			Member: strconv.FormatInt(livestream.ID, 10),
@@ -308,11 +312,10 @@ func cacheLeaderBoardOnInit() {
 		log.Fatalf("failed to cache the leader board: %s", err)
 	}
 	for _, reaction := range reactions {
-		err = redisClient.ZIncrBy(context.Background(), UserLeaderBoardRedisKey, 1, strconv.FormatInt(reaction.UserID, 10)).Err()
+		err = redisClient.ZIncrBy(context.Background(), UserLeaderBoardRedisKey, 1, strconv.FormatInt(livestreamID2UserID[reaction.UserID], 10)).Err()
 		if err != nil {
 			log.Fatalf("failed to cache the leader board: %s", err)
 		}
-
 		err = redisClient.ZIncrBy(context.Background(), LivestreamLeaderBoardRedisKey, 1, strconv.FormatInt(reaction.LivestreamID, 10)).Err()
 		if err != nil {
 			log.Fatalf("failed to cache the leader board: %s", err)
@@ -325,7 +328,7 @@ func cacheLeaderBoardOnInit() {
 		log.Fatalf("failed to cache the leader board: %s", err)
 	}
 	for _, comment := range comments {
-		err = redisClient.ZIncrBy(context.Background(), UserLeaderBoardRedisKey, float64(comment.Tip), strconv.FormatInt(comment.UserID, 10)).Err()
+		err = redisClient.ZIncrBy(context.Background(), UserLeaderBoardRedisKey, float64(comment.Tip), strconv.FormatInt(livestreamID2UserID[comment.UserID], 10)).Err()
 		if err != nil {
 			log.Fatalf("failed to cache the leader board: %s", err)
 		}
@@ -334,6 +337,29 @@ func cacheLeaderBoardOnInit() {
 		if err != nil {
 			log.Fatalf("failed to cache the leader board: %s", err)
 		}
+	}
+}
+
+const livestreamID2UserIDCachePrefix = "livestream2user:"
+
+func cacheLivestreamID2UserIDOnInit() {
+	var livestreams []*LivestreamModel
+	err := dbConn.Select(&livestreams, "SELECT * FROM livestreams")
+	if err != nil {
+		log.Fatalf("failed to cache live2user: %s", err)
+	}
+
+	cacheItems := make([]interface{}, len(livestreams))
+	i := 0
+	for _, livestream := range livestreams {
+		cacheItems[i] = fmt.Sprintf("%s%d", livestreamID2UserIDCachePrefix, livestream.ID)
+		i++
+		cacheItems[i] = strconv.FormatInt(livestream.UserID, 10)
+		i++
+	}
+	err = redisClient.MSet(context.Background(), cacheItems...).Err()
+	if err != nil {
+		log.Fatalf("failed to cache live2user: %s", err)
 	}
 }
 
