@@ -532,17 +532,19 @@ func fillLivestreamResponse(ctx context.Context, tx *sqlx.Tx, livestreamModel Li
 		cacheKeys[i] = TagID2NameCacheRedisKeyPrefix + tagID
 	}
 
-	tagNames, err := redisClient.MGet(ctx, cacheKeys...).Result()
-	if err != nil {
-		return Livestream{}, err
-	}
-
 	tags := make([]Tag, len(tagIDs))
-	for i, tagName := range tagNames {
-		id, _ := strconv.ParseInt(tagIDs[i], 10, 64)
-		tags[i] = Tag{
-			ID:   id,
-			Name: tagName.(string),
+	if len(cacheKeys) > 0 {
+		tagNames, err := redisClient.MGet(ctx, cacheKeys...).Result()
+		if err != nil {
+			return Livestream{}, err
+		}
+
+		for i, tagName := range tagNames {
+			id, _ := strconv.ParseInt(tagIDs[i], 10, 64)
+			tags[i] = Tag{
+				ID:   id,
+				Name: tagName.(string),
+			}
 		}
 	}
 
