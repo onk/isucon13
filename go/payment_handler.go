@@ -16,7 +16,7 @@ func GetPaymentResult(c echo.Context) error {
 
 	var totalTip int64
 	// FIXME: なんとなくだけどクエリがキショい
-	if err := tx.GetContext(ctx, &totalTip, "SELECT IFNULL(SUM(tip), 0) FROM livecomments"); err != nil {
+	if err := dbConn.GetContext(ctx, &totalTip, "SELECT IFNULL(SUM(tip), 0) FROM livecomments"); err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to count total tip: "+err.Error())
 	}
 
