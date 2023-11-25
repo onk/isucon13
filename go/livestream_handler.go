@@ -164,9 +164,11 @@ func reserveLivestreamHandler(c echo.Context) error {
 		}); err != nil {
 			return echo.NewHTTPError(http.StatusInternalServerError, "failed to insert livestream tag: "+err.Error())
 		}
-		cacheValues[i] = tagID
+		cacheValues[i] = strconv.FormatInt(tagID, 10)
 	}
-	err = redisClient.LPush(ctx, fmt.Sprintf("%s%d", LivestreamTagsCacheRedisKeyPrefix, livestreamID), cacheValues...).Err()
+	if len(cacheValues) > 0 {
+		err = redisClient.LPush(ctx, fmt.Sprintf("%s%d", LivestreamTagsCacheRedisKeyPrefix, livestreamID), cacheValues...).Err()
+	}
 	if err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to insert livestream tag cache: "+err.Error())
 	}

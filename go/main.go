@@ -144,7 +144,7 @@ func cacheTagsOnInit() {
 		name2tagIDCacheItems[i] = Name2TagIDCacheRedisKeyPrefix + tag.Name
 		i++
 		tagID2NameCacheItems[i] = tag.Name
-		name2tagIDCacheItems[i] = tag.ID
+		name2tagIDCacheItems[i] = strconv.FormatInt(tag.ID, 10)
 		i++
 	}
 	err = redisClient.MSet(context.Background(), tagID2NameCacheItems...).Err()
