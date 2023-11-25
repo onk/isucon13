@@ -26,3 +26,4 @@ CREATE TABLE `icons` (
 `hash` varchar(255) NOT NULL,
 PRIMARY KEY (`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;
+alter table icons add index user_id (user_id);
