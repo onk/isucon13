@@ -5,14 +5,6 @@ package main
 import (
 	"context"
 	"fmt"
-	"log"
-	"net"
-	"net/http"
-	_ "net/http/pprof"
-	"os"
-	"os/exec"
-	"strconv"
-
 	"github.com/go-sql-driver/mysql"
 	"github.com/gorilla/sessions"
 	"github.com/jmoiron/sqlx"
@@ -21,6 +13,13 @@ import (
 	"github.com/labstack/echo/v4/middleware"
 	echolog "github.com/labstack/gommon/log"
 	"github.com/redis/go-redis/v9"
+	"log"
+	"net"
+	"net/http"
+	_ "net/http/pprof"
+	"os"
+	"os/exec"
+	"strconv"
 )
 
 const (
@@ -220,8 +219,15 @@ func cacheTipsOnInit() {
 const livestreamViewersCountCachePrefix = "num_viewers:livestream:"
 const userViewersCountCachePrefix = "num_viewers:user:"
 
+type LivestreamViewersHistory struct {
+	ID           int64 `db:"id"`
+	UserID       int64 `db:"user_id"`
+	LivestreamID int64 `db:"livestream_id"`
+	CreatedAt    int64 `db:"created_at"`
+}
+
 func cacheLivestreamViewersHistoryOnInit() {
-	var livestreamViewers []*LivestreamViewerModel
+	var livestreamViewers []*LivestreamViewersHistory
 	err := dbConn.Select(&livestreamViewers, "SELECT * FROM livestream_viewers_history")
 	if err != nil {
 		log.Fatalf("failed to cache the livestreamViewers: %s", err)
@@ -367,7 +373,7 @@ func cacheLivestreamID2UserIDOnInit() {
 		log.Fatalf("failed to cache live2user: %s", err)
 	}
 
-	cacheItems := make([]interface{}, len(livestreams))
+	cacheItems := make([]interface{}, len(livestreams)*2)
 	i := 0
 	for _, livestream := range livestreams {
 		cacheItems[i] = fmt.Sprintf("%s%d", livestreamID2UserIDCachePrefix, livestream.ID)
