@@ -107,6 +107,7 @@ func getIconHandler(c echo.Context) error {
 
 	var image []byte
 	// FIXME: index効いてる？
+	// FIXME: DBにアイコンが入ってる
 	if err := tx.GetContext(ctx, &image, "SELECT image FROM icons WHERE user_id = ?", user.ID); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return c.File(fallbackImage)
@@ -147,6 +148,7 @@ func postIconHandler(c echo.Context) error {
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to delete old user icon: "+err.Error())
 	}
 
+	// FIXME: blobつっこんでる
 	rs, err := tx.ExecContext(ctx, "INSERT INTO icons (user_id, image) VALUES (?, ?)", userID, req.Image)
 	if err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to insert new user icon: "+err.Error())
@@ -405,6 +407,7 @@ func verifyUserSession(c echo.Context) error {
 	return nil
 }
 
+// FIXME: userをfillするときに必ず2クエリ発行されるのでなんとかせよ
 func fillUserResponse(ctx context.Context, tx *sqlx.Tx, userModel UserModel) (User, error) {
 	themeModel := ThemeModel{}
 	if err := tx.GetContext(ctx, &themeModel, "SELECT * FROM themes WHERE user_id = ?", userModel.ID); err != nil {
@@ -421,6 +424,7 @@ func fillUserResponse(ctx context.Context, tx *sqlx.Tx, userModel UserModel) (Us
 			return User{}, err
 		}
 	}
+	// FIXME: これは必要である、毎度計算するな。アップロード時にuserのレコードかなんかに入れとけ
 	iconHash := sha256.Sum256(image)
 
 	user := User{

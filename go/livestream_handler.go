@@ -214,6 +214,7 @@ func searchLivestreamsHandler(c echo.Context) error {
 		}
 	} else {
 		// 検索条件なし
+		// FIXME: LIMIT無し挙動の時の時に本当に全部取る必要あるのか？？？？？
 		query := `SELECT * FROM livestreams ORDER BY id DESC`
 		if c.QueryParam("limit") != "" {
 			limit, err := strconv.Atoi(c.QueryParam("limit"))

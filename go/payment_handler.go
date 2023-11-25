@@ -10,6 +10,7 @@ type PaymentResult struct {
 	TotalTip int64 `json:"total_tip"`
 }
 
+// FIXME: これがどれくらい呼ばれるのか、検証用であればまあよし。
 func GetPaymentResult(c echo.Context) error {
 	ctx := c.Request().Context()
 

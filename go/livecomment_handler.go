@@ -209,6 +209,7 @@ func postLivecommentHandler(c echo.Context) error {
 	var hitSpam int
 	for _, ngword := range ngwords {
 		// FIXME: このクエリキショい
+		// FIXME: N+1
 		query := `
 		SELECT COUNT(*)
 		FROM
