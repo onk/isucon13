@@ -6,11 +6,9 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"io/ioutil"
 	"log"
 	"net/http"
-	"os"
 	"os/exec"
 	"sync"
 	"time"
@@ -432,18 +430,13 @@ func fillUserResponse(ctx context.Context, tx *sqlx.Tx, userModel UserModel) (Us
 		return User{}, err
 	}
 
-	var image []byte
-	if err := tx.GetContext(ctx, &image, "SELECT image FROM icons WHERE user_id = ?", userModel.ID); err != nil {
+	var hash string
+	if err := tx.GetContext(ctx, &hash, "SELECT hash FROM icons WHERE user_id = ?", userModel.ID); err != nil {
 		if !errors.Is(err, sql.ErrNoRows) {
 			return User{}, err
 		}
-		image, err = os.ReadFile(fallbackImage)
-		if err != nil {
-			return User{}, err
-		}
 	}
-	// FIXME: これは必要である、毎度計算するな。アップロード時にuserのレコードかなんかに入れとけ
-	iconHash := sha256.Sum256(image)
+	// FIXED: hashは必要である、毎度計算するな。アップロード時にuserのレコードかなんかに入れとけ
 
 	user := User{
 		ID:          userModel.ID,
@@ -454,7 +447,7 @@ func fillUserResponse(ctx context.Context, tx *sqlx.Tx, userModel UserModel) (Us
 			ID:       themeModel.ID,
 			DarkMode: themeModel.DarkMode,
 		},
-		IconHash: fmt.Sprintf("%x", iconHash),
+		IconHash: hash,
 	}
 
 	return user, nil
