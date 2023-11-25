@@ -127,6 +127,7 @@ func initializeHandler(c echo.Context) error {
 	})
 }
 
+const tagsCacheRedisKey = "tags"
 const TagID2NameCacheRedisKeyPrefix = "tag_id2name:"
 const Name2TagIDCacheRedisKeyPrefix = "name2tag_id:"
 
@@ -137,6 +138,7 @@ func cacheTagsOnInit() {
 		log.Fatalf("failed to cache the tags: %s", err)
 	}
 
+	tagsCacheItems := make([]interface{}, 0, len(tagModels))
 	tagID2NameCacheItems := make([]interface{}, len(tagModels)*2)
 	name2tagIDCacheItems := make([]interface{}, len(tagModels)*2)
 	i := 0
@@ -147,6 +149,8 @@ func cacheTagsOnInit() {
 		tagID2NameCacheItems[i] = tag.Name
 		name2tagIDCacheItems[i] = strconv.FormatInt(tag.ID, 10)
 		i++
+
+		tagsCacheItems = append(tagsCacheItems, fmt.Sprintf("%d:%s", tag.ID, tag.Name))
 	}
 	err = redisClient.MSet(context.Background(), tagID2NameCacheItems...).Err()
 	if err != nil {
@@ -156,6 +160,8 @@ func cacheTagsOnInit() {
 	if err != nil {
 		log.Fatalf("failed to make cache for tags: %w", err)
 	}
+
+	redisClient.LPush(context.Background(), tagsCacheRedisKey, tagsCacheItems...)
 }
 
 func cacheLivestreamTagsOnInit() {

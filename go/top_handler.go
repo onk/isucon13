@@ -4,6 +4,8 @@ import (
 	"database/sql"
 	"errors"
 	"net/http"
+	"strconv"
+	"strings"
 
 	"github.com/labstack/echo/v4"
 )
@@ -25,30 +27,21 @@ type TagsResponse struct {
 func getTagHandler(c echo.Context) error {
 	ctx := c.Request().Context()
 
-	tx, err := dbConn.BeginTxx(ctx, nil)
-	// FIXME selectだけなのにロック取ってる？
+	result, err := redisClient.LRange(ctx, tagsCacheRedisKey, 0, -1).Result()
 	if err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, "failed to begin new transaction: : "+err.Error()+err.Error())
-	}
-	defer tx.Rollback()
-
-	var tagModels []*TagModel
-	// FIXME これlimitとか無いけどええんか？ もしそうならこれキャッシュしたほうがよさそうげ
-	if err := tx.SelectContext(ctx, &tagModels, "SELECT * FROM tags"); err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to get tags: "+err.Error())
 	}
 
-	if err := tx.Commit(); err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, "failed to commit: "+err.Error())
-	}
-
-	tags := make([]*Tag, len(tagModels))
-	for i := range tagModels {
+	tags := make([]*Tag, len(result))
+	for i, id2name := range result {
+		split := strings.Split(id2name, ":")
+		id, _ := strconv.ParseInt(split[0], 10, 64)
 		tags[i] = &Tag{
-			ID:   tagModels[i].ID,
-			Name: tagModels[i].Name,
+			ID:   id,
+			Name: split[1],
 		}
 	}
+
 	return c.JSON(http.StatusOK, &TagsResponse{
 		Tags: tags,
 	})
