@@ -121,6 +121,8 @@ func initializeHandler(c echo.Context) error {
 	cacheTagsOnInit()
 	cacheLivestreamTagsOnInit()
 	cacheTipsOnInit()
+	cacheLivestreamViewersHistoryOnInit()
+	cacheReactionsOnInit()
 
 	c.Request().Header.Add("Content-Type", "application/json;charset=utf-8")
 	return c.JSON(http.StatusOK, InitializeResponse{
@@ -223,6 +225,23 @@ func cacheLivestreamViewersHistoryOnInit() {
 
 	for _, viewer := range livestreamViewers {
 		err := redisClient.Incr(context.Background(), fmt.Sprintf("%s%d", ViewersCountCachePrefix, viewer.LivestreamID)).Err()
+		if err != nil {
+			log.Fatalf("failed to cache the livestreamViewers: %s", err)
+		}
+	}
+}
+
+const reactionsCachePrefix = "num_reactions:"
+
+func cacheReactionsOnInit() {
+	var reactions []*ReactionModel
+	err := dbConn.Select(&reactions, "SELECT * FROM reactions")
+	if err != nil {
+		log.Fatalf("failed to cache the livestreamViewers: %s", err)
+	}
+
+	for _, reaction := range reactions {
+		err := redisClient.Incr(context.Background(), fmt.Sprintf("%s%d", reactionsCachePrefix, reaction.LivestreamID)).Err()
 		if err != nil {
 			log.Fatalf("failed to cache the livestreamViewers: %s", err)
 		}

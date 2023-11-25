@@ -259,10 +259,15 @@ func getLivestreamStatisticsHandler(c echo.Context) error {
 	}
 
 	// リアクション数
-	var totalReactions int64
-	if err := tx.GetContext(ctx, &totalReactions, "SELECT COUNT(*) FROM livestreams l INNER JOIN reactions r ON r.livestream_id = l.id WHERE l.id = ?", livestreamID); err != nil && !errors.Is(err, sql.ErrNoRows) {
-		return echo.NewHTTPError(http.StatusInternalServerError, "failed to count total reactions: "+err.Error())
+	reactionCountStr, err := redisClient.Get(ctx, fmt.Sprintf("%s%d", reactionsCachePrefix, livestreamID)).Result()
+	if err != nil {
+		if err == redis.Nil {
+			reactionCountStr = "0"
+		} else {
+			return echo.NewHTTPError(http.StatusInternalServerError, "failed to retrieve the reaction count: "+err.Error())
+		}
 	}
+	totalReactions, _ := strconv.ParseInt(reactionCountStr, 10, 64)
 
 	// スパム報告数
 	var totalReports int64
