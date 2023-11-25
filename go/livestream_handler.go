@@ -15,6 +15,9 @@ import (
 	"github.com/labstack/echo/v4"
 )
 
+// live streamのIDをappendして使うこと
+const LivestreamTagsCacheRedisKeyPrefix = "livestreamTags:"
+
 type ReserveLivestreamRequest struct {
 	Tags         []int64 `json:"tags"`
 	Title        string  `json:"title"`
@@ -152,7 +155,8 @@ func reserveLivestreamHandler(c echo.Context) error {
 	livestreamModel.ID = livestreamID
 
 	// タグ追加
-	for _, tagID := range req.Tags {
+	cacheValues := make([]interface{}, len(req.Tags))
+	for i, tagID := range req.Tags {
 		// FIXME: N+1
 		if _, err := tx.NamedExecContext(ctx, "INSERT INTO livestream_tags (livestream_id, tag_id) VALUES (:livestream_id, :tag_id)", &LivestreamTagModel{
 			LivestreamID: livestreamID,
@@ -160,6 +164,13 @@ func reserveLivestreamHandler(c echo.Context) error {
 		}); err != nil {
 			return echo.NewHTTPError(http.StatusInternalServerError, "failed to insert livestream tag: "+err.Error())
 		}
+		cacheValues[i] = strconv.FormatInt(tagID, 10)
+	}
+	if len(cacheValues) > 0 {
+		err = redisClient.LPush(ctx, fmt.Sprintf("%s%d", LivestreamTagsCacheRedisKeyPrefix, livestreamID), cacheValues...).Err()
+	}
+	if err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, "failed to insert livestream tag cache: "+err.Error())
 	}
 
 	livestream, err := fillLivestreamResponse(ctx, tx, *livestreamModel)
@@ -186,15 +197,14 @@ func searchLivestreamsHandler(c echo.Context) error {
 
 	var livestreamModels []*LivestreamModel
 	if c.QueryParam("tag") != "" {
-		// タグによる取得
-		var tagIDList []int
-		// FIXME: indexきいてるかみてくれ
-		if err := tx.SelectContext(ctx, &tagIDList, "SELECT id FROM tags WHERE name = ?", keyTagName); err != nil {
+		tagIDStr, err := redisClient.Get(ctx, Name2TagIDCacheRedisKeyPrefix+keyTagName).Result()
+		if err != nil {
 			return echo.NewHTTPError(http.StatusInternalServerError, "failed to get tags: "+err.Error())
 		}
+		tagID, _ := strconv.ParseInt(tagIDStr, 10, 64)
 
 		// FIXME: indexきいてるかみてくれ
-		query, params, err := sqlx.In("SELECT * FROM livestream_tags WHERE tag_id IN (?) ORDER BY livestream_id DESC", tagIDList)
+		query, params, err := sqlx.In("SELECT * FROM livestream_tags WHERE tag_id = ? ORDER BY livestream_id DESC", tagID)
 		if err != nil {
 			return echo.NewHTTPError(http.StatusInternalServerError, "failed to construct IN query: "+err.Error())
 		}
@@ -511,21 +521,29 @@ func fillLivestreamResponse(ctx context.Context, tx *sqlx.Tx, livestreamModel Li
 		return Livestream{}, err
 	}
 
-	var livestreamTagModels []*LivestreamTagModel
-	if err := tx.SelectContext(ctx, &livestreamTagModels, "SELECT * FROM livestream_tags WHERE livestream_id = ?", livestreamModel.ID); err != nil {
+	tagIDs, err := redisClient.LRange(ctx, fmt.Sprintf("%s%d", LivestreamTagsCacheRedisKeyPrefix, livestreamModel.ID), 0, -1).Result()
+	if err != nil {
 		return Livestream{}, err
 	}
 
-	tags := make([]Tag, len(livestreamTagModels))
-	for i := range livestreamTagModels {
-		tagModel := TagModel{}
-		if err := tx.GetContext(ctx, &tagModel, "SELECT * FROM tags WHERE id = ?", livestreamTagModels[i].TagID); err != nil {
+	cacheKeys := make([]string, len(tagIDs))
+	for i, tagID := range tagIDs {
+		cacheKeys[i] = TagID2NameCacheRedisKeyPrefix + tagID
+	}
+
+	tags := make([]Tag, len(tagIDs))
+	if len(cacheKeys) > 0 {
+		tagNames, err := redisClient.MGet(ctx, cacheKeys...).Result()
+		if err != nil {
 			return Livestream{}, err
 		}
 
-		tags[i] = Tag{
-			ID:   tagModel.ID,
-			Name: tagModel.Name,
+		for i, tagName := range tagNames {
+			id, _ := strconv.ParseInt(tagIDs[i], 10, 64)
+			tags[i] = Tag{
+				ID:   id,
+				Name: tagName.(string),
+			}
 		}
 	}
 
