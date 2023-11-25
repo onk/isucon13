@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"database/sql"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"io/ioutil"
@@ -167,7 +168,9 @@ func postIconHandler(c echo.Context) error {
 		c.Logger().Printf("failed to insert prepare icon: "+err.Error()+"\n", err)
 	}
 
-	res, err := stmt.Exec(userModel.ID, sha256.Sum256(req.Image))
+	hash := sha256.Sum256(req.Image)
+
+	res, err := stmt.Exec(userModel.ID, hex.EncodeToString(hash[:]))
 	if err != nil {
 		c.Logger().Printf("failed to insert exec icon: "+err.Error()+"\n", err)
 	}
