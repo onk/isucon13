@@ -90,13 +90,14 @@ func getIconHandler(c echo.Context) error {
 
 	username := c.Param("username")
 
-	tx, err := dbConn.BeginTxx(ctx, nil)
+	tx, err := dbConn.BeginTxx(ctx, nil) // FIXME: ここもselectのみのtxnっぽい
 	if err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to begin transaction: "+err.Error())
 	}
 	defer tx.Rollback()
 
 	var user UserModel
+	// FIXME: index効いてる？
 	if err := tx.GetContext(ctx, &user, "SELECT * FROM users WHERE name = ?", username); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return echo.NewHTTPError(http.StatusNotFound, "not found user that has the given username")
@@ -105,6 +106,7 @@ func getIconHandler(c echo.Context) error {
 	}
 
 	var image []byte
+	// FIXME: index効いてる？
 	if err := tx.GetContext(ctx, &image, "SELECT image FROM icons WHERE user_id = ?", user.ID); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return c.File(fallbackImage)
@@ -140,6 +142,7 @@ func postIconHandler(c echo.Context) error {
 	}
 	defer tx.Rollback()
 
+	// FIXME: REPLACEステートメントに置き変えられそう
 	if _, err := tx.ExecContext(ctx, "DELETE FROM icons WHERE user_id = ?", userID); err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to delete old user icon: "+err.Error())
 	}
@@ -176,7 +179,7 @@ func getMeHandler(c echo.Context) error {
 	// existence already checked
 	userID := sess.Values[defaultUserIDKey].(int64)
 
-	tx, err := dbConn.BeginTxx(ctx, nil)
+	tx, err := dbConn.BeginTxx(ctx, nil) // FIXME: selectのみのtxn
 	if err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to begin transaction: "+err.Error())
 	}
@@ -283,7 +286,7 @@ func loginHandler(c echo.Context) error {
 		return echo.NewHTTPError(http.StatusBadRequest, "failed to decode the request body as json")
 	}
 
-	tx, err := dbConn.BeginTxx(ctx, nil)
+	tx, err := dbConn.BeginTxx(ctx, nil) // FIXME: selectのみtxn
 	if err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to begin transaction: "+err.Error())
 	}
@@ -291,6 +294,7 @@ func loginHandler(c echo.Context) error {
 
 	userModel := UserModel{}
 	// usernameはUNIQUEなので、whereで一意に特定できる
+	// FIXME: index効いてるかどうかみてくれ
 	err = tx.GetContext(ctx, &userModel, "SELECT * FROM users WHERE name = ?", req.Username)
 	if errors.Is(err, sql.ErrNoRows) {
 		return echo.NewHTTPError(http.StatusUnauthorized, "invalid username or password")
@@ -303,6 +307,7 @@ func loginHandler(c echo.Context) error {
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to commit: "+err.Error())
 	}
 
+	// FIXME: 暗号化解いてもいいよ
 	err = bcrypt.CompareHashAndPassword([]byte(userModel.HashedPassword), []byte(req.Password))
 	if err == bcrypt.ErrMismatchedHashAndPassword {
 		return echo.NewHTTPError(http.StatusUnauthorized, "invalid username or password")
@@ -348,6 +353,7 @@ func getUserHandler(c echo.Context) error {
 
 	username := c.Param("username")
 
+	// FIXME: selectのみtxn
 	tx, err := dbConn.BeginTxx(ctx, nil)
 	if err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to begin transaction: "+err.Error())
@@ -355,6 +361,7 @@ func getUserHandler(c echo.Context) error {
 	defer tx.Rollback()
 
 	userModel := UserModel{}
+	// FIXME: indexきいてるかどうかみてくれ
 	if err := tx.GetContext(ctx, &userModel, "SELECT * FROM users WHERE name = ?", username); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return echo.NewHTTPError(http.StatusNotFound, "not found user that has the given username")

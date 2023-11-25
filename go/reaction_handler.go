@@ -68,6 +68,7 @@ func getReactionsHandler(c echo.Context) error {
 
 	reactions := make([]Reaction, len(reactionModels))
 	for i := range reactionModels {
+		// FIXME: 5N+1
 		reaction, err := fillReactionResponse(ctx, tx, reactionModels[i])
 		if err != nil {
 			return echo.NewHTTPError(http.StatusInternalServerError, "failed to fill reaction: "+err.Error())
@@ -141,6 +142,8 @@ func postReactionHandler(c echo.Context) error {
 	return c.JSON(http.StatusCreated, reaction)
 }
 
+// FIXME: user情報に応じて個別に2つクエリを発行しておる。JOINにして1發で引いたほうがよくない？
+// FIXME: 中でfillLivestreamResponseも呼んでる (これは中で3クエリ叩く) があり絶望
 func fillReactionResponse(ctx context.Context, tx *sqlx.Tx, reactionModel ReactionModel) (Reaction, error) {
 	userModel := UserModel{}
 	if err := tx.GetContext(ctx, &userModel, "SELECT * FROM users WHERE id = ?", reactionModel.UserID); err != nil {

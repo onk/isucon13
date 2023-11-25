@@ -13,6 +13,7 @@ type PaymentResult struct {
 func GetPaymentResult(c echo.Context) error {
 	ctx := c.Request().Context()
 
+	// FIXME: selectのみtxn
 	tx, err := dbConn.BeginTxx(ctx, nil)
 	if err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to begin transaction: "+err.Error())
@@ -20,6 +21,7 @@ func GetPaymentResult(c echo.Context) error {
 	defer tx.Rollback()
 
 	var totalTip int64
+	// FIXME: なんとなくだけどクエリがキショい
 	if err := tx.GetContext(ctx, &totalTip, "SELECT IFNULL(SUM(tip), 0) FROM livecomments"); err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to count total tip: "+err.Error())
 	}
