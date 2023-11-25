@@ -243,7 +243,6 @@ func searchLivestreamsHandler(c echo.Context) error {
 	livestreams := make([]Livestream, len(livestreamModels))
 	for i := range livestreamModels {
 		// FIXME: N+1
-		c.Logger().Printf("@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@")
 		livestream, err := fillLivestreamResponse(ctx, tx, *livestreamModels[i])
 		if err != nil {
 			return echo.NewHTTPError(http.StatusInternalServerError, "failed to fill livestream: "+err.Error())
@@ -532,6 +531,7 @@ func fillLivestreamResponse(ctx context.Context, tx *sqlx.Tx, livestreamModel Li
 	for i, tagID := range tagIDs {
 		cacheKeys[i] = TagID2NameCacheRedisKeyPrefix + tagID
 	}
+	fmt.Printf("@@@@@@@@@@@@@@@@@@@@@@@@@@@@ %v\n", cacheKeys)
 
 	tags := make([]Tag, len(tagIDs))
 	if len(cacheKeys) > 0 {
@@ -542,7 +542,6 @@ func fillLivestreamResponse(ctx context.Context, tx *sqlx.Tx, livestreamModel Li
 
 		for i, tagName := range tagNames {
 			id, _ := strconv.ParseInt(tagIDs[i], 10, 64)
-			fmt.Printf("@@@@@@@@@@@@@@@@@@@@@@@@@@@@ %d => %s", id, tagName.(string))
 			tags[i] = Tag{
 				ID:   id,
 				Name: tagName.(string),
