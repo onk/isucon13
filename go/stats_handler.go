@@ -3,6 +3,8 @@ package main
 import (
 	"database/sql"
 	"errors"
+	"fmt"
+	"github.com/redis/go-redis/v9"
 	"net/http"
 	"sort"
 	"strconv"
@@ -240,10 +242,15 @@ func getLivestreamStatisticsHandler(c echo.Context) error {
 	rank++ // zrevrankは0はじまり
 
 	// 視聴者数算出
-	var viewersCount int64
-	if err := tx.GetContext(ctx, &viewersCount, `SELECT COUNT(*) FROM livestreams l INNER JOIN livestream_viewers_history h ON h.livestream_id = l.id WHERE l.id = ?`, livestreamID); err != nil && !errors.Is(err, sql.ErrNoRows) {
-		return echo.NewHTTPError(http.StatusInternalServerError, "failed to count livestream viewers: "+err.Error())
+	viewersCountStr, err := redisClient.Get(ctx, fmt.Sprintf("%s%d", ViewersCountCachePrefix, livestreamID)).Result()
+	if err != nil {
+		if err == redis.Nil {
+			viewersCountStr = "0"
+		} else {
+			return echo.NewHTTPError(http.StatusInternalServerError, "failed to retrieve the viewer count: "+err.Error())
+		}
 	}
+	viewersCount, _ := strconv.ParseInt(viewersCountStr, 10, 64)
 
 	// 最大チップ額
 	var maxTip int64

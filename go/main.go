@@ -212,6 +212,23 @@ func cacheTipsOnInit() {
 	}
 }
 
+const ViewersCountCachePrefix = "num_viewers:"
+
+func cacheLivestreamViewersHistoryOnInit() {
+	var livestreamViewers []*LivestreamViewerModel
+	err := dbConn.Select(&livestreamViewers, "SELECT * FROM livestream_viewers_history")
+	if err != nil {
+		log.Fatalf("failed to cache the livestreamViewers: %s", err)
+	}
+
+	for _, viewer := range livestreamViewers {
+		err := redisClient.Incr(context.Background(), fmt.Sprintf("%s%d", ViewersCountCachePrefix, viewer.LivestreamID)).Err()
+		if err != nil {
+			log.Fatalf("failed to cache the livestreamViewers: %s", err)
+		}
+	}
+}
+
 var redisClient *redis.Client
 
 func main() {

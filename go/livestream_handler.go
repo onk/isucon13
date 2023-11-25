@@ -391,6 +391,11 @@ func enterLivestreamHandler(c echo.Context) error {
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to commit: "+err.Error())
 	}
 
+	err = redisClient.Incr(context.Background(), fmt.Sprintf("%s%d", ViewersCountCachePrefix, livestreamID)).Err()
+	if err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, "failed to viewer incr: "+err.Error())
+	}
+
 	return c.NoContent(http.StatusOK)
 }
 
@@ -423,6 +428,11 @@ func exitLivestreamHandler(c echo.Context) error {
 
 	if err := tx.Commit(); err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to commit: "+err.Error())
+	}
+
+	err = redisClient.Decr(context.Background(), fmt.Sprintf("%s%d", ViewersCountCachePrefix, livestreamID)).Err()
+	if err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, "failed to viewer decr: "+err.Error())
 	}
 
 	return c.NoContent(http.StatusOK)
