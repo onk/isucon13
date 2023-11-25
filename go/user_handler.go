@@ -426,7 +426,7 @@ func fillUserResponse(ctx context.Context, tx *sqlx.Tx, userModel UserModel) (Us
 	}
 
 	var hash string
-	if err := tx.GetContext(ctx, &hash, "SELECT hash FROM icons WHERE user_id = ?", userModel.ID); err != nil {
+	if err := tx.GetContext(ctx, &hash, "SELECT hash FROM icons WHERE user_id = ? ORDER BY ID DESC limit 1 ", userModel.ID); err != nil {
 		if !errors.Is(err, sql.ErrNoRows) {
 			return User{}, err
 		}
