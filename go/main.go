@@ -200,6 +200,11 @@ func main() {
 	}
 	powerDNSSubdomainAddress = subdomainAddr
 
+	// pprof、最後には消すこと
+	go func() {
+		log.Println(http.ListenAndServe(":6060", nil))
+	}()
+
 	// HTTPサーバ起動
 	listenAddr := net.JoinHostPort("", strconv.Itoa(listenPort))
 	if err := e.Start(listenAddr); err != nil {
