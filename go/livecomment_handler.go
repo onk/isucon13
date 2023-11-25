@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"net/http"
 	"strconv"
 	"time"
@@ -103,10 +104,44 @@ func getLivecommentsHandler(c echo.Context) error {
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to get livecomments: "+err.Error())
 	}
 
+	//UserModelをまとめて取得
+	user_id_list := make([]int64, len(livecommentModels))
+	for i := range livecommentModels {
+		user_id_list[i] = livecommentModels[i].UserID
+	}
+
+	userModelList := make(map[int]UserModel, len(livecommentModels))
+	query, args, err := sqlx.In("SELECT * FROM users WHERE id IN (?)", user_id_list)
+	if err != nil {
+		log.Fatalln(err)
+	}
+	query = tx.Rebind(query)
+
+	if err := tx.SelectContext(ctx, &userModelList, query, args...); err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, "failed get user list: "+err.Error())
+	}
+
+	//LivestreamModelをまとめて取得
+	livestream_id_list := make([]int64, len(livecommentModels))
+	for i := range livecommentModels {
+		livestream_id_list[i] = livecommentModels[i].LivestreamID
+	}
+
+	livestreamList := make(map[int]LivestreamModel, len(livecommentModels))
+	query, args, err = sqlx.In("SELECT * FROM livestreams WHERE id IN (?)", livestream_id_list)
+	if err != nil {
+		log.Fatalln(err)
+	}
+	query = tx.Rebind(query)
+
+	if err := tx.SelectContext(ctx, &livestreamList, query, args...); err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, "failed get ls list: "+err.Error())
+	}
+
 	livecomments := make([]Livecomment, len(livecommentModels))
 	for i := range livecommentModels {
 		// FIXME: 2N+1
-		livecomment, err := fillLivecommentResponse(ctx, tx, livecommentModels[i])
+		livecomment, err := fillLivecommentResponseWithSome(ctx, tx, livecommentModels[i], userModelList[i], livestreamList[i])
 		if err != nil {
 			return echo.NewHTTPError(http.StatusInternalServerError, "failed to fil livecomments: "+err.Error())
 		}
@@ -470,6 +505,34 @@ func fillLivecommentResponse(ctx context.Context, tx *sqlx.Tx, livecommentModel 
 	if err := tx.GetContext(ctx, &livestreamModel, "SELECT * FROM livestreams WHERE id = ?", livecommentModel.LivestreamID); err != nil {
 		return Livecomment{}, err
 	}
+	livestream, err := fillLivestreamResponse(ctx, tx, livestreamModel)
+	if err != nil {
+		return Livecomment{}, err
+	}
+
+	livecomment := Livecomment{
+		ID:         livecommentModel.ID,
+		User:       commentOwner,
+		Livestream: livestream,
+		Comment:    livecommentModel.Comment,
+		Tip:        livecommentModel.Tip,
+		CreatedAt:  livecommentModel.CreatedAt,
+	}
+
+	return livecomment, nil
+}
+
+func fillLivecommentResponseWithSome(ctx context.Context, tx *sqlx.Tx, livecommentModel LivecommentModel, commentOwner2 UserModel, livestreamModel LivestreamModel) (Livecomment, error) {
+	// userModel -> いらない
+	// user (commentOwner)
+	// livestreamModel 必要
+	// livestream 必要
+
+	commentOwner, err := fillUserResponse(ctx, tx, commentOwner2)
+	if err != nil {
+		return Livecomment{}, err
+	}
+
 	livestream, err := fillLivestreamResponse(ctx, tx, livestreamModel)
 	if err != nil {
 		return Livecomment{}, err
