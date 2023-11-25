@@ -11,7 +11,6 @@ import (
 	"log"
 	"net/http"
 	"os/exec"
-	"sync"
 	"time"
 
 	"github.com/google/uuid"
@@ -150,18 +149,13 @@ func postIconHandler(c echo.Context) error {
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to get user: "+err.Error())
 	}
 
-	var wg sync.WaitGroup
-	wg.Add(1)
-	go func() {
-		// ファイルを書き込む
-		filename := "/home/isucon/webapp/icons/" + userModel.Name
+	// ファイルを書き込む
+	filename := "/home/isucon/webapp/icons/" + userModel.Name
 
-		err = ioutil.WriteFile(filename, req.Image, 0644)
-		if err != nil {
-			log.Fatalf("Failed to write to icon file: %v", err)
-		}
-	}()
-
+	err = ioutil.WriteFile(filename, req.Image, 0644)
+	if err != nil {
+		log.Fatalf("Failed to write to icon file: %v", err)
+	}
 	// hashをinsertする
 	stmt, err = dbConn.Preparex("INSERT INTO icons (user_id, hash) VALUES (?, ?)")
 	if err != nil {
@@ -179,8 +173,6 @@ func postIconHandler(c echo.Context) error {
 	if err != nil {
 		log.Fatalln(err)
 	}
-
-	wg.Wait()
 
 	return c.JSON(http.StatusCreated, &PostIconResponse{
 		ID: id,
