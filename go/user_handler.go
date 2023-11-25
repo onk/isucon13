@@ -428,7 +428,7 @@ func fillUserResponse(ctx context.Context, tx *sqlx.Tx, userModel UserModel) (Us
 	var hash string
 	if err := tx.GetContext(ctx, &hash, "SELECT hash FROM icons WHERE user_id = ? ORDER BY ID DESC limit 1 ", userModel.ID); err != nil {
 		if !errors.Is(err, sql.ErrNoRows) {
-			return User{}, err
+			hash = "d9f8294e9d895f81ce62e73dc7d5dff862a4fa40bd4e0fecf53f7526a8edcac0"
 		}
 	}
 	// FIXED: hashは必要である、毎度計算するな。アップロード時にuserのレコードかなんかに入れとけ
