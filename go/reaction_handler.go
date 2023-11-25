@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 	"net/http"
 	"strconv"
 	"time"
@@ -83,7 +84,13 @@ func getReactionsHandler(c echo.Context) error {
 	}
 
 	userList := make(map[int64]UserModel)
-	if err := tx.GetContext(ctx, &userList, "SELECT * FROM users WHERE id IN (?)", user_id_list); err != nil {
+	query, args, err := sqlx.In("SELECT * FROM users WHERE id IN (?)", user_id_list)
+	if err != nil {
+		log.Fatalln(err)
+	}
+	query = tx.Rebind(query)
+
+	if err := tx.SelectContext(ctx, &userList, query, args...); err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed get user list: "+err.Error())
 	}
 
