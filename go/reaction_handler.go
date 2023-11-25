@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log"
 	"net/http"
 	"strconv"
 	"time"
@@ -68,35 +67,10 @@ func getReactionsHandler(c echo.Context) error {
 		return echo.NewHTTPError(http.StatusNotFound, "failed to get reactions")
 	}
 
-	livestreamModel := LivestreamModel{}
-	if err := tx.GetContext(ctx, &livestreamModel, "SELECT * FROM livestreams WHERE id = ?", livestreamID); err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, "failed get livestream: "+err.Error())
-	}
-	livestream, err := fillLivestreamResponse(ctx, tx, livestreamModel)
-	if err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, "failed to fill livestream: "+err.Error())
-	}
-
 	reactions := make([]Reaction, len(reactionModels))
-	user_id_list := make([]int64, len(reactionModels))
-	for i := range reactionModels {
-		user_id_list[i] = reactionModels[i].UserID
-	}
-
-	userList := make(map[int64]UserModel)
-	query, args, err := sqlx.In("SELECT * FROM users WHERE id IN (?)", user_id_list)
-	if err != nil {
-		log.Fatalln(err)
-	}
-	query = tx.Rebind(query)
-
-	if err := tx.SelectContext(ctx, &userList, query, args...); err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, "failed get user list: "+err.Error())
-	}
-
 	for i := range reactionModels {
 		// FIXME: 5N+1
-		reaction, err := fillReactionResponseLivestreamModel(ctx, tx, reactionModels[i], livestream, userList[reactionModels[i].UserID])
+		reaction, err := fillReactionResponse(ctx, tx, reactionModels[i])
 		if err != nil {
 			return echo.NewHTTPError(http.StatusInternalServerError, "failed to fill reaction: "+err.Error())
 		}
@@ -211,23 +185,6 @@ func fillReactionResponse(ctx context.Context, tx *sqlx.Tx, reactionModel Reacti
 		return Reaction{}, err
 	}
 	livestream, err := fillLivestreamResponse(ctx, tx, livestreamModel)
-	if err != nil {
-		return Reaction{}, err
-	}
-
-	reaction := Reaction{
-		ID:         reactionModel.ID,
-		EmojiName:  reactionModel.EmojiName,
-		User:       user,
-		Livestream: livestream,
-		CreatedAt:  reactionModel.CreatedAt,
-	}
-
-	return reaction, nil
-}
-
-func fillReactionResponseLivestreamModel(ctx context.Context, tx *sqlx.Tx, reactionModel ReactionModel, livestream Livestream, userModel UserModel) (Reaction, error) {
-	user, err := fillUserResponse(ctx, tx, userModel)
 	if err != nil {
 		return Reaction{}, err
 	}
