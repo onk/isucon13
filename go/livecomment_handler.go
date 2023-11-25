@@ -261,6 +261,10 @@ func postLivecommentHandler(c echo.Context) error {
 		if err != nil {
 			return echo.NewHTTPError(http.StatusInternalServerError, "failed to incr the leader board: "+err.Error())
 		}
+		err = redisClient.ZIncrBy(ctx, UserLeaderBoardRedisKey, float64(req.Tip), strconv.FormatInt(userID, 10)).Err()
+		if err != nil {
+			return echo.NewHTTPError(http.StatusInternalServerError, "failed to incr the leader board: "+err.Error())
+		}
 		err = redisClient.Set(ctx, fmt.Sprintf("%s%s:%d", LiveCommentTipsCacheRedisKeyPrefix, c.Param("livestream_id"), livecommentID), strconv.FormatInt(req.Tip, 10), 1*time.Hour).Err()
 		if err != nil {
 			return echo.NewHTTPError(http.StatusInternalServerError, "failed to cache the tip comment: "+err.Error())
@@ -421,6 +425,11 @@ func moderateHandler(c echo.Context) error {
 			}
 
 			err = redisClient.ZIncrBy(ctx, LivestreamLeaderBoardRedisKey, -float64(tip), fmt.Sprintf("%d", livestreamID)).Err()
+			if err != nil {
+				return echo.NewHTTPError(http.StatusInternalServerError, "failed to delete old livecomments that hit spams: "+err.Error())
+			}
+
+			err = redisClient.ZIncrBy(ctx, UserLeaderBoardRedisKey, -float64(tip), fmt.Sprintf("%d", userID)).Err()
 			if err != nil {
 				return echo.NewHTTPError(http.StatusInternalServerError, "failed to delete old livecomments that hit spams: "+err.Error())
 			}

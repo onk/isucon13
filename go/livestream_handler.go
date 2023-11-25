@@ -195,8 +195,6 @@ func reserveLivestreamHandler(c echo.Context) error {
 	return c.JSON(http.StatusCreated, livestream)
 }
 
-const LivestreamLeaderBoardRedisKey = "livestream_leader_board"
-
 func searchLivestreamsHandler(c echo.Context) error {
 	ctx := c.Request().Context()
 	keyTagName := c.QueryParam("tag")

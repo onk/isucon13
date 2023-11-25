@@ -124,6 +124,7 @@ func initializeHandler(c echo.Context) error {
 	cacheLivestreamViewersHistoryOnInit()
 	cacheReactionsOnInit()
 	cacheSpamCountOnInit()
+	cacheLeaderBoardOnInit()
 
 	c.Request().Header.Add("Content-Type", "application/json;charset=utf-8")
 	return c.JSON(http.StatusOK, InitializeResponse{
@@ -262,6 +263,76 @@ func cacheSpamCountOnInit() {
 		err := redisClient.Incr(context.Background(), fmt.Sprintf("%s%d", spamCountCachePrefix, report.LivestreamID)).Err()
 		if err != nil {
 			log.Fatalf("failed to cache the livecommentreport: %s", err)
+		}
+	}
+}
+
+const LivestreamLeaderBoardRedisKey = "livestream_leader_board"
+const UserLeaderBoardRedisKey = "user_leader_board"
+
+func cacheLeaderBoardOnInit() {
+	var users []*UserModel
+	err := dbConn.Select(&users, "SELECT * FROM users")
+	if err != nil {
+		log.Fatalf("failed to cache the user leader board: %s", err)
+	}
+	for _, user := range users {
+		err := redisClient.ZAdd(context.Background(), UserLeaderBoardRedisKey, redis.Z{
+			Score:  0,
+			Member: strconv.FormatInt(user.ID, 10),
+		}).Err()
+		if err != nil {
+			log.Fatalf("failed to cache the user leader board: %s", err)
+		}
+	}
+
+	var livestreams []*LivestreamModel
+	err = dbConn.Select(&livestreams, "SELECT * FROM livestreams")
+	if err != nil {
+		log.Fatalf("failed to cache the livestream leader board: %s", err)
+	}
+
+	for _, livestream := range livestreams {
+		err := redisClient.ZAdd(context.Background(), LivestreamLeaderBoardRedisKey, redis.Z{
+			Score:  0,
+			Member: strconv.FormatInt(livestream.ID, 10),
+		}).Err()
+		if err != nil {
+			log.Fatalf("failed to cache the livestream leader board: %s", err)
+		}
+	}
+
+	var reactions []*ReactionModel
+	err = dbConn.Select(&reactions, "SELECT * FROM reactions")
+	if err != nil {
+		log.Fatalf("failed to cache the leader board: %s", err)
+	}
+	for _, reaction := range reactions {
+		err = redisClient.ZIncrBy(context.Background(), UserLeaderBoardRedisKey, 1, strconv.FormatInt(reaction.UserID, 10)).Err()
+		if err != nil {
+			log.Fatalf("failed to cache the leader board: %s", err)
+		}
+
+		err = redisClient.ZIncrBy(context.Background(), LivestreamLeaderBoardRedisKey, 1, strconv.FormatInt(reaction.LivestreamID, 10)).Err()
+		if err != nil {
+			log.Fatalf("failed to cache the leader board: %s", err)
+		}
+	}
+
+	var comments []*LivecommentModel
+	err = dbConn.Select(&comments, "SELECT * FROM livecomments WHERE tip > 0")
+	if err != nil {
+		log.Fatalf("failed to cache the leader board: %s", err)
+	}
+	for _, comment := range comments {
+		err = redisClient.ZIncrBy(context.Background(), UserLeaderBoardRedisKey, float64(comment.Tip), strconv.FormatInt(comment.UserID, 10)).Err()
+		if err != nil {
+			log.Fatalf("failed to cache the leader board: %s", err)
+		}
+
+		err = redisClient.ZIncrBy(context.Background(), LivestreamLeaderBoardRedisKey, float64(comment.Tip), strconv.FormatInt(comment.LivestreamID, 10)).Err()
+		if err != nil {
+			log.Fatalf("failed to cache the leader board: %s", err)
 		}
 	}
 }

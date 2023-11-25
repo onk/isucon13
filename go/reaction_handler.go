@@ -144,6 +144,10 @@ func postReactionHandler(c echo.Context) error {
 	if err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to incr the leader board: "+err.Error())
 	}
+	err = redisClient.ZIncrBy(ctx, UserLeaderBoardRedisKey, 1, strconv.FormatInt(userID, 10)).Err()
+	if err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, "failed to incr the leader board: "+err.Error())
+	}
 	err = redisClient.Incr(ctx, fmt.Sprintf("%s%d", reactionsCachePrefix, livestreamID)).Err()
 	if err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to incr the num of reactions: "+err.Error())
