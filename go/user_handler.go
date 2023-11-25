@@ -7,9 +7,11 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"io/ioutil"
 	"log"
 	"net/http"
+	"os"
 	"os/exec"
 	"time"
 
@@ -279,6 +281,29 @@ func registerHandler(c echo.Context) error {
 	user, err := fillUserResponse(ctx, tx, userModel)
 	if err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to fill user: "+err.Error())
+	}
+
+	// 標準のNoImageからファイルをコピーする
+	srcFile, err := os.Open("/home/isucon/webapp/public/NoImage.jpg")
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer srcFile.Close()
+
+	destFile, err := os.Create("/home/isucon/webapp/icons/" + userModel.Name)
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer destFile.Close()
+
+	_, err = io.Copy(destFile, srcFile)
+	if err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, "failed to copy Default Image: "+err.Error())
+	}
+
+	err = destFile.Sync()
+	if err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, "failed to copy sync Default Image: "+err.Error())
 	}
 
 	if err := tx.Commit(); err != nil {
