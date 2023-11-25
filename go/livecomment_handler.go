@@ -341,6 +341,11 @@ func reportLivecommentHandler(c echo.Context) error {
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to commit: "+err.Error())
 	}
 
+	err = redisClient.Incr(ctx, fmt.Sprintf("%s%d", spamCountCachePrefix, livestreamID)).Err()
+	if err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, "failed to incr spam count: "+err.Error())
+	}
+
 	return c.JSON(http.StatusCreated, report)
 }
 

@@ -270,14 +270,15 @@ func getLivestreamStatisticsHandler(c echo.Context) error {
 	totalReactions, _ := strconv.ParseInt(reactionCountStr, 10, 64)
 
 	// スパム報告数
-	var totalReports int64
-	if err := tx.GetContext(ctx, &totalReports, `SELECT COUNT(*) FROM livestreams l INNER JOIN livecomment_reports r ON r.livestream_id = l.id WHERE l.id = ?`, livestreamID); err != nil && !errors.Is(err, sql.ErrNoRows) {
-		return echo.NewHTTPError(http.StatusInternalServerError, "failed to count total spam reports: "+err.Error())
+	reportsStr, err := redisClient.Get(ctx, fmt.Sprintf("%s%d", spamCountCachePrefix, livestreamID)).Result()
+	if err != nil {
+		if err == redis.Nil {
+			reportsStr = "0"
+		} else {
+			return echo.NewHTTPError(http.StatusInternalServerError, "failed to retrieve the spam count: "+err.Error())
+		}
 	}
-
-	if err := tx.Commit(); err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, "failed to commit: "+err.Error())
-	}
+	totalReports, _ := strconv.ParseInt(reportsStr, 10, 64)
 
 	return c.JSON(http.StatusOK, LivestreamStatistics{
 		Rank:           rank,

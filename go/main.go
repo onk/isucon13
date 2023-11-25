@@ -123,6 +123,7 @@ func initializeHandler(c echo.Context) error {
 	cacheTipsOnInit()
 	cacheLivestreamViewersHistoryOnInit()
 	cacheReactionsOnInit()
+	cacheSpamCountOnInit()
 
 	c.Request().Header.Add("Content-Type", "application/json;charset=utf-8")
 	return c.JSON(http.StatusOK, InitializeResponse{
@@ -244,6 +245,23 @@ func cacheReactionsOnInit() {
 		err := redisClient.Incr(context.Background(), fmt.Sprintf("%s%d", reactionsCachePrefix, reaction.LivestreamID)).Err()
 		if err != nil {
 			log.Fatalf("failed to cache the livestreamViewers: %s", err)
+		}
+	}
+}
+
+const spamCountCachePrefix = "num_spam_report:"
+
+func cacheSpamCountOnInit() {
+	var reports []*LivecommentReportModel
+	err := dbConn.Select(&reports, "SELECT * FROM livecomment_reports")
+	if err != nil {
+		log.Fatalf("failed to cache the livecommentreport: %s", err)
+	}
+
+	for _, report := range reports {
+		err := redisClient.Incr(context.Background(), fmt.Sprintf("%s%d", spamCountCachePrefix, report.LivestreamID)).Err()
+		if err != nil {
+			log.Fatalf("failed to cache the livecommentreport: %s", err)
 		}
 	}
 }
