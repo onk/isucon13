@@ -1,5 +1,19 @@
 TRUNCATE TABLE themes;
-TRUNCATE TABLE icons;
+
+-- 初期はコレ -- プロフィール画像
+-- CREATE TABLE `icons` (
+--   `id` BIGINT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+--   `user_id` BIGINT NOT NULL,
+--   `image` LONGBLOB NOT NULL
+-- ) ENGINE=InnoDB CHARACTER SET utf8mb4 COLLATE utf8mb4_bin;
+DROP TABLE icons;
+CREATE TABLE `icons` (
+`id` bigint NOT NULL AUTO_INCREMENT,
+`user_id` bigint NOT NULL,
+`hash` varchar(255) NOT NULL,
+PRIMARY KEY (`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;
+
 TRUNCATE TABLE reservation_slots;
 TRUNCATE TABLE livestream_viewers_history;
 TRUNCATE TABLE livecomment_reports;
