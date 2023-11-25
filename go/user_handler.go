@@ -4,11 +4,12 @@ import (
 	"context"
 	"crypto/sha256"
 	"database/sql"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
-	"fmt"
+	"io/ioutil"
+	"log"
 	"net/http"
-	"os"
 	"os/exec"
 	"time"
 
@@ -120,7 +121,7 @@ func getIconHandler(c echo.Context) error {
 }
 
 func postIconHandler(c echo.Context) error {
-	ctx := c.Request().Context()
+	//ctx := c.Request().Context()
 
 	if err := verifyUserSession(c); err != nil {
 		// echo.NewHTTPErrorが返っているのでそのまま出力
@@ -137,34 +138,44 @@ func postIconHandler(c echo.Context) error {
 		return echo.NewHTTPError(http.StatusBadRequest, "failed to decode the request body as json")
 	}
 
-	tx, err := dbConn.BeginTxx(ctx, nil)
+	// ユーザー名を引っ張ってくる
+	userModel := UserModel{}
+	stmt, err := dbConn.Preparex("SELECT * FROM users WHERE id = ?")
 	if err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, "failed to begin transaction: "+err.Error())
-	}
-	defer tx.Rollback()
-
-	// FIXME: REPLACEステートメントに置き変えられそう
-	if _, err := tx.ExecContext(ctx, "DELETE FROM icons WHERE user_id = ?", userID); err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, "failed to delete old user icon: "+err.Error())
+		return echo.NewHTTPError(http.StatusInternalServerError, "failed to get user: "+err.Error())
 	}
 
-	// FIXME: blobつっこんでる
-	rs, err := tx.ExecContext(ctx, "INSERT INTO icons (user_id, image) VALUES (?, ?)", userID, req.Image)
+	if err := stmt.Get(&userModel, userID); err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, "failed to get user: "+err.Error())
+	}
+
+	// ファイルを書き込む
+	filename := "/home/isucon/webapp/icons/" + userModel.Name
+
+	err = ioutil.WriteFile(filename, req.Image, 0644)
 	if err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, "failed to insert new user icon: "+err.Error())
+		log.Fatalf("Failed to write to icon file: %v", err)
 	}
-
-	iconID, err := rs.LastInsertId()
+	// hashをinsertする
+	stmt, err = dbConn.Preparex("INSERT INTO icons (user_id, hash) VALUES (?, ?)")
 	if err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, "failed to get last inserted icon id: "+err.Error())
+		c.Logger().Printf("failed to insert prepare icon: "+err.Error()+"\n", err)
 	}
 
-	if err := tx.Commit(); err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, "failed to commit: "+err.Error())
+	hash := sha256.Sum256(req.Image)
+
+	res, err := stmt.Exec(userModel.ID, hex.EncodeToString(hash[:]))
+	if err != nil {
+		c.Logger().Printf("failed to insert exec icon: "+err.Error()+"\n", err)
+	}
+
+	id, err := res.LastInsertId()
+	if err != nil {
+		log.Fatalln(err)
 	}
 
 	return c.JSON(http.StatusCreated, &PostIconResponse{
-		ID: iconID,
+		ID: id,
 	})
 }
 
@@ -414,18 +425,13 @@ func fillUserResponse(ctx context.Context, tx *sqlx.Tx, userModel UserModel) (Us
 		return User{}, err
 	}
 
-	var image []byte
-	if err := tx.GetContext(ctx, &image, "SELECT image FROM icons WHERE user_id = ?", userModel.ID); err != nil {
+	var hash string
+	if err := tx.GetContext(ctx, &hash, "SELECT hash FROM icons WHERE user_id = ?", userModel.ID); err != nil {
 		if !errors.Is(err, sql.ErrNoRows) {
 			return User{}, err
 		}
-		image, err = os.ReadFile(fallbackImage)
-		if err != nil {
-			return User{}, err
-		}
 	}
-	// FIXME: これは必要である、毎度計算するな。アップロード時にuserのレコードかなんかに入れとけ
-	iconHash := sha256.Sum256(image)
+	// FIXED: hashは必要である、毎度計算するな。アップロード時にuserのレコードかなんかに入れとけ
 
 	user := User{
 		ID:          userModel.ID,
@@ -436,7 +442,7 @@ func fillUserResponse(ctx context.Context, tx *sqlx.Tx, userModel UserModel) (Us
 			ID:       themeModel.ID,
 			DarkMode: themeModel.DarkMode,
 		},
-		IconHash: fmt.Sprintf("%x", iconHash),
+		IconHash: hash,
 	}
 
 	return user, nil
