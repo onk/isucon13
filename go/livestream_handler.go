@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/redis/go-redis/v9"
 	"net/http"
 	"strconv"
 	"time"
@@ -180,6 +181,20 @@ func reserveLivestreamHandler(c echo.Context) error {
 
 	if err := tx.Commit(); err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to commit: "+err.Error())
+	}
+
+	z := redis.Z{
+		Score:  0,
+		Member: strconv.FormatInt(livestreamID, 10),
+	}
+	err = redisClient.ZAdd(ctx, LivestreamLeaderBoardRedisKey, z).Err()
+	if err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, "failed to make zset entry: "+err.Error())
+	}
+
+	err = redisClient.Set(ctx, fmt.Sprintf("%s%d", livestreamID2UserIDCachePrefix, livestreamID), strconv.FormatInt(userID, 10), 1*time.Hour).Err()
+	if err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, "failed to make livestream2user cache: "+err.Error())
 	}
 
 	return c.JSON(http.StatusCreated, livestream)
@@ -379,6 +394,19 @@ func enterLivestreamHandler(c echo.Context) error {
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to commit: "+err.Error())
 	}
 
+	err = redisClient.Incr(context.Background(), fmt.Sprintf("%s%d", livestreamViewersCountCachePrefix, livestreamID)).Err()
+	if err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, "failed to viewer incr: "+err.Error())
+	}
+
+	livestreamUserIDStr, err := redisClient.Get(context.Background(), fmt.Sprintf("%s%d", livestreamID2UserIDCachePrefix, livestreamID)).Result()
+	if err == nil {
+		err = redisClient.Incr(context.Background(), fmt.Sprintf("%s%s", userViewersCountCachePrefix, livestreamUserIDStr)).Err()
+		if err != nil {
+			return echo.NewHTTPError(http.StatusInternalServerError, "failed to viewer incr: "+err.Error())
+		}
+	}
+
 	return c.NoContent(http.StatusOK)
 }
 
@@ -411,6 +439,19 @@ func exitLivestreamHandler(c echo.Context) error {
 
 	if err := tx.Commit(); err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to commit: "+err.Error())
+	}
+
+	err = redisClient.Decr(context.Background(), fmt.Sprintf("%s%d", livestreamViewersCountCachePrefix, livestreamID)).Err()
+	if err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, "failed to viewer decr: "+err.Error())
+	}
+
+	livestreamUserIDStr, err := redisClient.Get(context.Background(), fmt.Sprintf("%s%d", livestreamID2UserIDCachePrefix, livestreamID)).Result()
+	if err == nil {
+		err = redisClient.Decr(context.Background(), fmt.Sprintf("%s%s", userViewersCountCachePrefix, livestreamUserIDStr)).Err()
+		if err != nil {
+			return echo.NewHTTPError(http.StatusInternalServerError, "failed to viewer decr: "+err.Error())
+		}
 	}
 
 	return c.NoContent(http.StatusOK)

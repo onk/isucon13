@@ -3,6 +3,8 @@ package main
 import (
 	"database/sql"
 	"errors"
+	"fmt"
+	"github.com/redis/go-redis/v9"
 	"net/http"
 	"sort"
 	"strconv"
@@ -233,59 +235,58 @@ func getLivestreamStatisticsHandler(c echo.Context) error {
 	}
 	defer tx.Rollback()
 
-	var livestream LivestreamModel
-	if err := tx.GetContext(ctx, &livestream, "SELECT * FROM livestreams WHERE id = ?", livestreamID); err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			return echo.NewHTTPError(http.StatusBadRequest, "cannot get stats of not found livestream")
-		} else {
-			return echo.NewHTTPError(http.StatusInternalServerError, "failed to get livestream: "+err.Error())
-		}
+	rank, err := redisClient.ZRevRank(ctx, LivestreamLeaderBoardRedisKey, strconv.FormatInt(livestreamID, 10)).Result()
+	if err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, "failed to retrieve the livestreaming leader board: "+err.Error())
 	}
+	rank++ // zrevrankは0はじまり
 
-	// FIXME ここで全部のライブストリーム引くのはやばい
-	var livestreams []*LivestreamModel
-	if err := tx.SelectContext(ctx, &livestreams, "SELECT * FROM livestreams"); err != nil && !errors.Is(err, sql.ErrNoRows) {
-		return echo.NewHTTPError(http.StatusInternalServerError, "failed to get livestreams: "+err.Error())
+	// 同一スコアの配信が複数あるときのため {{{
+	score, err := redisClient.ZScore(ctx, LivestreamLeaderBoardRedisKey, strconv.FormatInt(livestreamID, 10)).Result()
+	if err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, "failed to retrieve the livestreaming leader board: "+err.Error())
 	}
-
-	// FIXME これオンラインでやらなきゃ駄目？
-	// ランク算出
-	var ranking LivestreamRanking
-	for _, livestream := range livestreams {
-		var reactions int64
-		// FIXME: N+1
-		if err := tx.GetContext(ctx, &reactions, "SELECT COUNT(*) FROM livestreams l INNER JOIN reactions r ON l.id = r.livestream_id WHERE l.id = ?", livestream.ID); err != nil && !errors.Is(err, sql.ErrNoRows) {
-			return echo.NewHTTPError(http.StatusInternalServerError, "failed to count reactions: "+err.Error())
-		}
-
-		var totalTips int64
-		// FIXME: N+1
-		if err := tx.GetContext(ctx, &totalTips, "SELECT IFNULL(SUM(l2.tip), 0) FROM livestreams l INNER JOIN livecomments l2 ON l.id = l2.livestream_id WHERE l.id = ?", livestream.ID); err != nil && !errors.Is(err, sql.ErrNoRows) {
-			return echo.NewHTTPError(http.StatusInternalServerError, "failed to count tips: "+err.Error())
-		}
-
-		score := reactions + totalTips
-		ranking = append(ranking, LivestreamRankingEntry{
-			LivestreamID: livestream.ID,
-			Score:        score,
+	sameScoreMembers, err := redisClient.ZRangeByScore(ctx, LivestreamLeaderBoardRedisKey, &redis.ZRangeBy{
+		Min: fmt.Sprintf("%f", score),
+		Max: fmt.Sprintf("%f", score),
+	}).Result()
+	if err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, "failed to retrieve the livestreaming leader board: "+err.Error())
+	}
+	if len(sameScoreMembers) >= 2 {
+		sort.Slice(sameScoreMembers, func(i, j int) bool {
+			numI, _ := strconv.Atoi(sameScoreMembers[i])
+			numJ, _ := strconv.Atoi(sameScoreMembers[j])
+			return numI > numJ
 		})
-	}
-	sort.Sort(ranking)
 
-	var rank int64 = 1
-	for i := len(ranking) - 1; i >= 0; i-- {
-		entry := ranking[i]
-		if entry.LivestreamID == livestreamID {
-			break
+		idStr := fmt.Sprintf("%d", livestreamID)
+		i := int64(1)
+		for _, member := range sameScoreMembers {
+			if member == idStr {
+				break
+			}
+			i++
 		}
-		rank++
+
+		count, err := redisClient.ZCount(ctx, LivestreamLeaderBoardRedisKey, fmt.Sprintf("(%f", score), "+inf").Result()
+		if err != nil {
+			return echo.NewHTTPError(http.StatusInternalServerError, "failed to retrieve the livestreaming leader board: "+err.Error())
+		}
+		rank = count + i
 	}
+	// }}}
 
 	// 視聴者数算出
-	var viewersCount int64
-	if err := tx.GetContext(ctx, &viewersCount, `SELECT COUNT(*) FROM livestreams l INNER JOIN livestream_viewers_history h ON h.livestream_id = l.id WHERE l.id = ?`, livestreamID); err != nil && !errors.Is(err, sql.ErrNoRows) {
-		return echo.NewHTTPError(http.StatusInternalServerError, "failed to count livestream viewers: "+err.Error())
+	viewersCountStr, err := redisClient.Get(ctx, fmt.Sprintf("%s%d", livestreamViewersCountCachePrefix, livestreamID)).Result()
+	if err != nil {
+		if err == redis.Nil {
+			viewersCountStr = "0"
+		} else {
+			return echo.NewHTTPError(http.StatusInternalServerError, "failed to retrieve the viewer count: "+err.Error())
+		}
 	}
+	viewersCount, _ := strconv.ParseInt(viewersCountStr, 10, 64)
 
 	// 最大チップ額
 	var maxTip int64
@@ -294,20 +295,26 @@ func getLivestreamStatisticsHandler(c echo.Context) error {
 	}
 
 	// リアクション数
-	var totalReactions int64
-	if err := tx.GetContext(ctx, &totalReactions, "SELECT COUNT(*) FROM livestreams l INNER JOIN reactions r ON r.livestream_id = l.id WHERE l.id = ?", livestreamID); err != nil && !errors.Is(err, sql.ErrNoRows) {
-		return echo.NewHTTPError(http.StatusInternalServerError, "failed to count total reactions: "+err.Error())
+	reactionCountStr, err := redisClient.Get(ctx, fmt.Sprintf("%s%d", livestreamReactionsCachePrefix, livestreamID)).Result()
+	if err != nil {
+		if err == redis.Nil {
+			reactionCountStr = "0"
+		} else {
+			return echo.NewHTTPError(http.StatusInternalServerError, "failed to retrieve the reaction count: "+err.Error())
+		}
 	}
+	totalReactions, _ := strconv.ParseInt(reactionCountStr, 10, 64)
 
 	// スパム報告数
-	var totalReports int64
-	if err := tx.GetContext(ctx, &totalReports, `SELECT COUNT(*) FROM livestreams l INNER JOIN livecomment_reports r ON r.livestream_id = l.id WHERE l.id = ?`, livestreamID); err != nil && !errors.Is(err, sql.ErrNoRows) {
-		return echo.NewHTTPError(http.StatusInternalServerError, "failed to count total spam reports: "+err.Error())
+	reportsStr, err := redisClient.Get(ctx, fmt.Sprintf("%s%d", spamCountCachePrefix, livestreamID)).Result()
+	if err != nil {
+		if err == redis.Nil {
+			reportsStr = "0"
+		} else {
+			return echo.NewHTTPError(http.StatusInternalServerError, "failed to retrieve the spam count: "+err.Error())
+		}
 	}
-
-	if err := tx.Commit(); err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, "failed to commit: "+err.Error())
-	}
+	totalReports, _ := strconv.ParseInt(reportsStr, 10, 64)
 
 	return c.JSON(http.StatusOK, LivestreamStatistics{
 		Rank:           rank,

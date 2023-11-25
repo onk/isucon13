@@ -166,6 +166,31 @@ func postReactionHandler(c echo.Context) error {
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to commit: "+err.Error())
 	}
 
+	err = redisClient.ZIncrBy(ctx, LivestreamLeaderBoardRedisKey, 1, c.Param("livestream_id")).Err()
+	if err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, "failed to incr the leader board: "+err.Error())
+	}
+
+	livestreamUserIDStr, err := redisClient.Get(ctx, fmt.Sprintf("%s%d", livestreamID2UserIDCachePrefix, livestreamID)).Result()
+	if err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, "failed to incr the leader board: "+err.Error())
+	}
+	livestreamUserID, _ := strconv.ParseInt(livestreamUserIDStr, 10, 64)
+	err = redisClient.ZIncrBy(ctx, UserLeaderBoardRedisKey, 1, strconv.FormatInt(livestreamUserID, 10)).Err()
+	if err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, "failed to incr the leader board: "+err.Error())
+	}
+
+	err = redisClient.Incr(ctx, fmt.Sprintf("%s%d", livestreamReactionsCachePrefix, livestreamID)).Err()
+	if err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, "failed to incr the num of livestream reactions: "+err.Error())
+	}
+
+	err = redisClient.Incr(ctx, fmt.Sprintf("%s%d", userReactionsCachePrefix, livestreamUserID)).Err()
+	if err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, "failed to incr the num of user reactions: "+err.Error())
+	}
+
 	return c.JSON(http.StatusCreated, reaction)
 }
 

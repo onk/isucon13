@@ -256,6 +256,21 @@ func postLivecommentHandler(c echo.Context) error {
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to commit: "+err.Error())
 	}
 
+	if req.Tip > 0 {
+		err = redisClient.ZIncrBy(ctx, LivestreamLeaderBoardRedisKey, float64(req.Tip), c.Param("livestream_id")).Err()
+		if err != nil {
+			return echo.NewHTTPError(http.StatusInternalServerError, "failed to incr the leader board: "+err.Error())
+		}
+		err = redisClient.ZIncrBy(ctx, UserLeaderBoardRedisKey, float64(req.Tip), strconv.FormatInt(livestreamModel.UserID, 10)).Err()
+		if err != nil {
+			return echo.NewHTTPError(http.StatusInternalServerError, "failed to incr the leader board: "+err.Error())
+		}
+		err = redisClient.Set(ctx, fmt.Sprintf("%s%s:%d", LiveCommentTipsCacheRedisKeyPrefix, c.Param("livestream_id"), livecommentID), strconv.FormatInt(req.Tip, 10), 1*time.Hour).Err()
+		if err != nil {
+			return echo.NewHTTPError(http.StatusInternalServerError, "failed to cache the tip comment: "+err.Error())
+		}
+	}
+
 	return c.JSON(http.StatusCreated, livecomment)
 }
 
@@ -330,6 +345,11 @@ func reportLivecommentHandler(c echo.Context) error {
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to commit: "+err.Error())
 	}
 
+	err = redisClient.Incr(ctx, fmt.Sprintf("%s%d", spamCountCachePrefix, livestreamID)).Err()
+	if err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, "failed to incr spam count: "+err.Error())
+	}
+
 	return c.JSON(http.StatusCreated, report)
 }
 
@@ -390,11 +410,31 @@ func moderateHandler(c echo.Context) error {
 	//
 	//// NGワードにヒットする過去の投稿も全削除する
 	//for _, ngword := range ngwords { // FIXME: これ過去の全削除する必要はなくない？ 追加されたワードのぶんだけ消せ
+
 	// ライブコメント一覧取得
-	//var livecomments []*LivecommentModel
-	//if err := dbConn.SelectContext(ctx, &livecomments, "SELECT * FROM livecomments"); err != nil {
-	//	return echo.NewHTTPError(http.StatusInternalServerError, "failed to get livecomments: "+err.Error())
-	//}
+	var livecomments []*LivecommentModel
+	if err := dbConn.SelectContext(ctx, &livecomments, "SELECT * FROM livecomments"); err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, "failed to get livecomments: "+err.Error())
+	}
+	for _, livecomment := range livecomments {
+		tipStr, err := redisClient.GetDel(ctx, fmt.Sprintf("%s%d:%d", LiveCommentTipsCacheRedisKeyPrefix, livestreamID, livecomment.ID)).Result()
+		if err == nil { // エラー処理？ 知ったことか！
+			tip, err := strconv.ParseInt(tipStr, 10, 64)
+			if err != nil {
+				return echo.NewHTTPError(http.StatusInternalServerError, "failed to delete old livecomments that hit spams: "+err.Error())
+			}
+
+			err = redisClient.ZIncrBy(ctx, LivestreamLeaderBoardRedisKey, -float64(tip), fmt.Sprintf("%d", livestreamID)).Err()
+			if err != nil {
+				return echo.NewHTTPError(http.StatusInternalServerError, "failed to delete old livecomments that hit spams: "+err.Error())
+			}
+
+			err = redisClient.ZIncrBy(ctx, UserLeaderBoardRedisKey, -float64(tip), fmt.Sprintf("%d", userID)).Err()
+			if err != nil {
+				return echo.NewHTTPError(http.StatusInternalServerError, "failed to delete old livecomments that hit spams: "+err.Error())
+			}
+		}
+	}
 
 	//for _, livecomment := range livecomments {
 	//	// FIXME: N+1
