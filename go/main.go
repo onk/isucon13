@@ -336,7 +336,7 @@ func cacheLeaderBoardOnInit() {
 		log.Fatalf("failed to cache the leader board: %s", err)
 	}
 	for _, reaction := range reactions {
-		err = redisClient.ZIncrBy(context.Background(), UserLeaderBoardRedisKey, 1, strconv.FormatInt(livestreamID2UserID[reaction.UserID], 10)).Err()
+		err = redisClient.ZIncrBy(context.Background(), UserLeaderBoardRedisKey, 1, strconv.FormatInt(livestreamID2UserID[reaction.LivestreamID], 10)).Err()
 		if err != nil {
 			log.Fatalf("failed to cache the leader board: %s", err)
 		}
@@ -352,7 +352,7 @@ func cacheLeaderBoardOnInit() {
 		log.Fatalf("failed to cache the leader board: %s", err)
 	}
 	for _, comment := range comments {
-		err = redisClient.ZIncrBy(context.Background(), UserLeaderBoardRedisKey, float64(comment.Tip), strconv.FormatInt(livestreamID2UserID[comment.UserID], 10)).Err()
+		err = redisClient.ZIncrBy(context.Background(), UserLeaderBoardRedisKey, float64(comment.Tip), strconv.FormatInt(livestreamID2UserID[comment.LivestreamID], 10)).Err()
 		if err != nil {
 			log.Fatalf("failed to cache the leader board: %s", err)
 		}
@@ -390,7 +390,7 @@ func cacheLivestreamID2UserIDOnInit() {
 var redisClient *redis.Client
 
 func main() {
-	redisHost := os.Getenv("REDIS_HOST")
+	redisHost := os.Getenv("ISUCON13_REDIS_HOST")
 	if redisHost == "" {
 		redisHost = "127.0.0.1"
 	}

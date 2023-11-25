@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"github.com/redis/go-redis/v9"
 	"net/http"
+	"sort"
 	"strconv"
 
 	"github.com/labstack/echo/v4"
@@ -90,22 +91,65 @@ func getUserStatisticsHandler(c echo.Context) error {
 	}
 
 	// ランク算出
-	rank, err := redisClient.ZRevRank(ctx, UserLeaderBoardRedisKey, strconv.FormatInt(user.ID, 10)).Result()
-	if err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, "failed to get user rank: "+err.Error())
+	var users []*UserModel
+	// FIXME: ここで全ユーザー引いてきてリーダーボード作ってるのやばすぎる
+	if err := tx.SelectContext(ctx, &users, "SELECT * FROM users"); err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, "failed to get users: "+err.Error())
 	}
-	rank++ // zrevrankは0はじまり
+
+	var ranking UserRanking
+	for _, user := range users {
+		var reactions int64
+		// FIXME: N+1
+		query := `
+		SELECT COUNT(*) FROM users u
+		INNER JOIN livestreams l ON l.user_id = u.id
+		INNER JOIN reactions r ON r.livestream_id = l.id
+		WHERE u.id = ?`
+		if err := tx.GetContext(ctx, &reactions, query, user.ID); err != nil && !errors.Is(err, sql.ErrNoRows) {
+			return echo.NewHTTPError(http.StatusInternalServerError, "failed to count reactions: "+err.Error())
+		}
+
+		var tips int64
+		// FIXME: N+1
+		query = `
+		SELECT IFNULL(SUM(l2.tip), 0) FROM users u
+		INNER JOIN livestreams l ON l.user_id = u.id	
+		INNER JOIN livecomments l2 ON l2.livestream_id = l.id
+		WHERE u.id = ?`
+		if err := tx.GetContext(ctx, &tips, query, user.ID); err != nil && !errors.Is(err, sql.ErrNoRows) {
+			return echo.NewHTTPError(http.StatusInternalServerError, "failed to count tips: "+err.Error())
+		}
+
+		score := reactions + tips
+		ranking = append(ranking, UserRankingEntry{
+			Username: user.Name,
+			Score:    score,
+		})
+	}
+
+	// FIXME: これアプリでやらせるのが良いかどうか
+	sort.Sort(ranking)
+	var rank int64 = 1
+	for i := len(ranking) - 1; i >= 0; i-- {
+		entry := ranking[i]
+		if entry.Username == username {
+			break
+		}
+		rank++
+	}
 
 	// リアクション数
-	reactionCountStr, err := redisClient.Get(ctx, fmt.Sprintf("%s%d", userReactionsCachePrefix, user.ID)).Result()
-	if err != nil {
-		if err == redis.Nil {
-			reactionCountStr = "0"
-		} else {
-			return echo.NewHTTPError(http.StatusInternalServerError, "failed to retrieve the reaction count: "+err.Error())
-		}
+	// FIXME: これもオンラインでやるのはヤバくね
+	var totalReactions int64
+	query := `SELECT COUNT(*) FROM users u 
+    INNER JOIN livestreams l ON l.user_id = u.id 
+    INNER JOIN reactions r ON r.livestream_id = l.id
+    WHERE u.name = ?
+	`
+	if err := tx.GetContext(ctx, &totalReactions, query, username); err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return echo.NewHTTPError(http.StatusInternalServerError, "failed to count total reactions: "+err.Error())
 	}
-	totalReactions, _ := strconv.ParseInt(reactionCountStr, 10, 64)
 
 	// ライブコメント数、チップ合計
 	var totalLivecomments int64
@@ -132,19 +176,20 @@ func getUserStatisticsHandler(c echo.Context) error {
 	}
 
 	// 合計視聴者数
-	viewersCountStr, err := redisClient.Get(ctx, fmt.Sprintf("%s%d", userViewersCountCachePrefix, user.ID)).Result()
-	if err != nil {
-		if err == redis.Nil {
-			reactionCountStr = "0"
-		} else {
-			return echo.NewHTTPError(http.StatusInternalServerError, "failed to retrieve the viewer count: "+err.Error())
+	var viewersCount int64
+	for _, livestream := range livestreams {
+		// FIXME: N+1
+		// FIXME: これをオンラインで集計するのやばそう
+		var cnt int64
+		if err := tx.GetContext(ctx, &cnt, "SELECT COUNT(*) FROM livestream_viewers_history WHERE livestream_id = ?", livestream.ID); err != nil && !errors.Is(err, sql.ErrNoRows) {
+			return echo.NewHTTPError(http.StatusInternalServerError, "failed to get livestream_view_history: "+err.Error())
 		}
+		viewersCount += cnt
 	}
-	viewersCount, _ := strconv.ParseInt(viewersCountStr, 10, 64)
 
 	// お気に入り絵文字
 	var favoriteEmoji string
-	query := `
+	query = `
 	SELECT r.emoji_name
 	FROM users u
 	INNER JOIN livestreams l ON l.user_id = u.id
@@ -195,6 +240,42 @@ func getLivestreamStatisticsHandler(c echo.Context) error {
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to retrieve the livestreaming leader board: "+err.Error())
 	}
 	rank++ // zrevrankは0はじまり
+
+	// 同一スコアの配信が複数あるときのため {{{
+	score, err := redisClient.ZScore(ctx, LivestreamLeaderBoardRedisKey, strconv.FormatInt(livestreamID, 10)).Result()
+	if err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, "failed to retrieve the livestreaming leader board: "+err.Error())
+	}
+	sameScoreMembers, err := redisClient.ZRangeByScore(ctx, LivestreamLeaderBoardRedisKey, &redis.ZRangeBy{
+		Min: fmt.Sprintf("%f", score),
+		Max: fmt.Sprintf("%f", score),
+	}).Result()
+	if err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, "failed to retrieve the livestreaming leader board: "+err.Error())
+	}
+	if len(sameScoreMembers) >= 2 {
+		sort.Slice(sameScoreMembers, func(i, j int) bool {
+			numI, _ := strconv.Atoi(sameScoreMembers[i])
+			numJ, _ := strconv.Atoi(sameScoreMembers[j])
+			return numI > numJ
+		})
+
+		idStr := fmt.Sprintf("%d", livestreamID)
+		i := int64(1)
+		for _, member := range sameScoreMembers {
+			if member == idStr {
+				break
+			}
+			i++
+		}
+
+		count, err := redisClient.ZCount(ctx, LivestreamLeaderBoardRedisKey, fmt.Sprintf("(%f", score), "+inf").Result()
+		if err != nil {
+			return echo.NewHTTPError(http.StatusInternalServerError, "failed to retrieve the livestreaming leader board: "+err.Error())
+		}
+		rank = count + i
+	}
+	// }}}
 
 	// 視聴者数算出
 	viewersCountStr, err := redisClient.Get(ctx, fmt.Sprintf("%s%d", livestreamViewersCountCachePrefix, livestreamID)).Result()
