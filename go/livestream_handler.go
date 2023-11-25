@@ -243,6 +243,7 @@ func searchLivestreamsHandler(c echo.Context) error {
 	livestreams := make([]Livestream, len(livestreamModels))
 	for i := range livestreamModels {
 		// FIXME: N+1
+		c.Logger().Printf("@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@")
 		livestream, err := fillLivestreamResponse(ctx, tx, *livestreamModels[i])
 		if err != nil {
 			return echo.NewHTTPError(http.StatusInternalServerError, "failed to fill livestream: "+err.Error())
