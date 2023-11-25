@@ -76,3 +76,16 @@ log_error = /var/log/mysql/error.log
 max_binlog_size   = 100M
 # binlog_do_db		= include_database_name
 # binlog_ignore_db	= include_database_name
+
+innodb_buffer_pool_size = 2G
+skip-innodb_doublewrite
+innodb_flush_log_at_trx_commit = 2
+innodb_flush_method = O_DIRECT_NO_FSYNC
+innodb_log_writer_threads = OFF
+internal_tmp_mem_storage_engine = MEMORY
+skip-log_bin
+log_slow_extra
+slow_query_log          = 1
+slow_query_log_file     = /var/log/mysql/mysql-slow.log
+long_query_time = 0
+log-queries-not-using-indexes
