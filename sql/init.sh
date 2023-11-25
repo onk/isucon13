@@ -26,6 +26,10 @@ mysql -u"$ISUCON_DB_USER" \
 		--port "$ISUCON_DB_PORT" \
 		"$ISUCON_DB_NAME" < initial_users.sql
 
+# icons を初期化
+rm -rf /home/isucon/webapp/icons
+cp -r /home/isucon/webapp/default_icons /home/isucon/webapp/icons
+
 mysql -u"$ISUCON_DB_USER" \
 		-p"$ISUCON_DB_PASSWORD" \
 		--host "$ISUCON_DB_HOST" \
