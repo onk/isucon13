@@ -25,22 +25,22 @@ type TagsResponse struct {
 func getTagHandler(c echo.Context) error {
 	ctx := c.Request().Context()
 
-	tx, err := dbConn.BeginTxx(ctx, nil)
-	// FIXME selectだけなのにロック取ってる？
-	if err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, "failed to begin new transaction: : "+err.Error()+err.Error())
-	}
-	defer tx.Rollback()
+	//tx, err := dbConn.BeginTxx(ctx, nil)
+	//// FIXME selectだけなのにロック取ってる？
+	//if err != nil {
+	//	return echo.NewHTTPError(http.StatusInternalServerError, "failed to begin new transaction: : "+err.Error()+err.Error())
+	//}
+	//defer tx.Rollback()
 
 	var tagModels []*TagModel
 	// FIXME これlimitとか無いけどええんか？ もしそうならこれキャッシュしたほうがよさそうげ
-	if err := tx.SelectContext(ctx, &tagModels, "SELECT * FROM tags"); err != nil {
+	if err := dbConn.SelectContext(ctx, &tagModels, "SELECT * FROM tags"); err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to get tags: "+err.Error())
 	}
 
-	if err := tx.Commit(); err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, "failed to commit: "+err.Error())
-	}
+	//if err := tx.Commit(); err != nil {
+	//	return echo.NewHTTPError(http.StatusInternalServerError, "failed to commit: "+err.Error())
+	//}
 
 	tags := make([]*Tag, len(tagModels))
 	for i := range tagModels {
