@@ -243,7 +243,7 @@ func searchLivestreamsHandler(c echo.Context) error {
 	livestreams := make([]Livestream, len(livestreamModels))
 	for i := range livestreamModels {
 		// FIXME: N+1
-		livestream, err := fillLivestreamResponse(ctx, tx, *livestreamModels[i], c.Logger())
+		livestream, err := fillLivestreamResponse(ctx, tx, *livestreamModels[i])
 		if err != nil {
 			return echo.NewHTTPError(http.StatusInternalServerError, "failed to fill livestream: "+err.Error())
 		}
@@ -512,7 +512,7 @@ func getLivecommentReportsHandler(c echo.Context) error {
 }
 
 // FIXME: ライブストリームの情報に応じて3クエリ実行されててきつい、なんとかせよ
-func fillLivestreamResponse(ctx context.Context, tx *sqlx.Tx, livestreamModel LivestreamModel, logger ...echo.Logger) (Livestream, error) {
+func fillLivestreamResponse(ctx context.Context, tx *sqlx.Tx, livestreamModel LivestreamModel) (Livestream, error) {
 	ownerModel := UserModel{}
 	if err := tx.GetContext(ctx, &ownerModel, "SELECT * FROM users WHERE id = ?", livestreamModel.UserID); err != nil {
 		return Livestream{}, err
@@ -531,9 +531,6 @@ func fillLivestreamResponse(ctx context.Context, tx *sqlx.Tx, livestreamModel Li
 	for i, tagID := range tagIDs {
 		cacheKeys[i] = TagID2NameCacheRedisKeyPrefix + tagID
 	}
-	if len(logger) > 0 {
-		logger[0].Printf("@@@@@@@@@@@@@@@@@@@@@ %v", cacheKeys)
-	}
 
 	tags := make([]Tag, len(tagIDs))
 	if len(cacheKeys) > 0 {
@@ -541,7 +538,6 @@ func fillLivestreamResponse(ctx context.Context, tx *sqlx.Tx, livestreamModel Li
 		if err != nil {
 			return Livestream{}, err
 		}
-		logger[0].Printf("@@@@@@@@@@@@@@@@@@@@@ %v", tagNames)
 
 		for i, tagName := range tagNames {
 			id, _ := strconv.ParseInt(tagIDs[i], 10, 64)

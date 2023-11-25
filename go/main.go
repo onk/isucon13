@@ -119,6 +119,7 @@ func initializeHandler(c echo.Context) error {
 	}
 
 	cacheTagsOnInit()
+	cacheLivestreamTagsOnInit()
 
 	c.Request().Header.Add("Content-Type", "application/json;charset=utf-8")
 	return c.JSON(http.StatusOK, InitializeResponse{
@@ -154,6 +155,29 @@ func cacheTagsOnInit() {
 	err = redisClient.MSet(context.Background(), name2tagIDCacheItems...).Err()
 	if err != nil {
 		log.Fatalf("failed to make cache for tags: %w", err)
+	}
+}
+
+func cacheLivestreamTagsOnInit() {
+	var keyTaggedLivestreams []*LivestreamTagModel
+	err := dbConn.Select(&keyTaggedLivestreams, "SELECT * FROM livestream_tags")
+	if err != nil {
+		log.Fatalf("failed to cache the livestream_tags: %s", err)
+	}
+
+	livestreamID2TagIDs := make(map[int64][]interface{})
+	for _, livestreamTag := range keyTaggedLivestreams {
+		if livestreamID2TagIDs[livestreamTag.LivestreamID] == nil {
+			livestreamID2TagIDs[livestreamTag.LivestreamID] = make([]interface{}, 0)
+		}
+		livestreamID2TagIDs[livestreamTag.LivestreamID] = append(livestreamID2TagIDs[livestreamTag.LivestreamID], strconv.FormatInt(livestreamTag.TagID, 10))
+	}
+
+	for livestreamID, tagIDs := range livestreamID2TagIDs {
+		err = redisClient.LPush(context.Background(), fmt.Sprintf("%s%d", LivestreamTagsCacheRedisKeyPrefix, livestreamID), tagIDs...).Err()
+		if err != nil {
+			log.Fatalf("failed to cache the livestream_tags: %s", err)
+		}
 	}
 }
 
