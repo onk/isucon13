@@ -120,6 +120,7 @@ func initializeHandler(c echo.Context) error {
 
 	cacheTagsOnInit()
 	cacheLivestreamTagsOnInit()
+	cacheTipsOnInit()
 
 	c.Request().Header.Add("Content-Type", "application/json;charset=utf-8")
 	return c.JSON(http.StatusOK, InitializeResponse{
@@ -184,6 +185,30 @@ func cacheLivestreamTagsOnInit() {
 		if err != nil {
 			log.Fatalf("failed to cache the livestream_tags: %s", err)
 		}
+	}
+}
+
+const LiveCommentTipsCacheRedisKeyPrefix = "live_comment_tips:"
+
+func cacheTipsOnInit() {
+	var liveComments []*LivecommentModel
+	err := dbConn.Select(&liveComments, "SELECT * FROM livecomments")
+	if err != nil {
+		log.Fatalf("failed to cache the livecomment: %s", err)
+	}
+
+	cacheItems := make([]interface{}, len(liveComments)*2)
+	i := 0
+	for _, comment := range liveComments {
+		cacheItems[i] = fmt.Sprintf("%s%d:%d", LiveCommentTipsCacheRedisKeyPrefix, comment.LivestreamID, comment.ID)
+		i++
+		cacheItems[i] = strconv.FormatInt(comment.Tip, 10)
+		i++
+	}
+
+	err = redisClient.MSet(context.Background(), cacheItems...).Err()
+	if err != nil {
+		log.Fatalf("failed to cache the livecomment: %s", err)
 	}
 }
 

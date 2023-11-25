@@ -140,6 +140,11 @@ func postReactionHandler(c echo.Context) error {
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to commit: "+err.Error())
 	}
 
+	err = redisClient.ZIncrBy(ctx, LivestreamLeaderBoardRedisKey, 1, c.Param("livestream_id")).Err()
+	if err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, "failed to incr the leader board: "+err.Error())
+	}
+
 	return c.JSON(http.StatusCreated, reaction)
 }
 

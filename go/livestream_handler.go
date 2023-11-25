@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/redis/go-redis/v9"
 	"net/http"
 	"strconv"
 	"time"
@@ -182,8 +183,19 @@ func reserveLivestreamHandler(c echo.Context) error {
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to commit: "+err.Error())
 	}
 
+	z := redis.Z{
+		Score:  0,
+		Member: strconv.FormatInt(livestreamID, 10),
+	}
+	err = redisClient.ZAdd(ctx, LivestreamLeaderBoardRedisKey, z).Err()
+	if err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, "failed to make zset entry: "+err.Error())
+	}
+
 	return c.JSON(http.StatusCreated, livestream)
 }
+
+const LivestreamLeaderBoardRedisKey = "livestream_leader_board"
 
 func searchLivestreamsHandler(c echo.Context) error {
 	ctx := c.Request().Context()

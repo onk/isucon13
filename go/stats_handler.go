@@ -233,53 +233,11 @@ func getLivestreamStatisticsHandler(c echo.Context) error {
 	}
 	defer tx.Rollback()
 
-	var livestream LivestreamModel
-	if err := tx.GetContext(ctx, &livestream, "SELECT * FROM livestreams WHERE id = ?", livestreamID); err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			return echo.NewHTTPError(http.StatusBadRequest, "cannot get stats of not found livestream")
-		} else {
-			return echo.NewHTTPError(http.StatusInternalServerError, "failed to get livestream: "+err.Error())
-		}
+	rank, err := redisClient.ZRevRank(ctx, LivestreamLeaderBoardRedisKey, strconv.FormatInt(livestreamID, 10)).Result()
+	if err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, "failed to retrieve the livestreaming leader board: "+err.Error())
 	}
-
-	// FIXME ここで全部のライブストリーム引くのはやばい
-	var livestreams []*LivestreamModel
-	if err := tx.SelectContext(ctx, &livestreams, "SELECT * FROM livestreams"); err != nil && !errors.Is(err, sql.ErrNoRows) {
-		return echo.NewHTTPError(http.StatusInternalServerError, "failed to get livestreams: "+err.Error())
-	}
-
-	// FIXME これオンラインでやらなきゃ駄目？
-	// ランク算出
-	var ranking LivestreamRanking
-	for _, livestream := range livestreams {
-		var reactions int64
-		// FIXME: N+1
-		if err := tx.GetContext(ctx, &reactions, "SELECT COUNT(*) FROM livestreams l INNER JOIN reactions r ON l.id = r.livestream_id WHERE l.id = ?", livestream.ID); err != nil && !errors.Is(err, sql.ErrNoRows) {
-			return echo.NewHTTPError(http.StatusInternalServerError, "failed to count reactions: "+err.Error())
-		}
-
-		var totalTips int64
-		// FIXME: N+1
-		if err := tx.GetContext(ctx, &totalTips, "SELECT IFNULL(SUM(l2.tip), 0) FROM livestreams l INNER JOIN livecomments l2 ON l.id = l2.livestream_id WHERE l.id = ?", livestream.ID); err != nil && !errors.Is(err, sql.ErrNoRows) {
-			return echo.NewHTTPError(http.StatusInternalServerError, "failed to count tips: "+err.Error())
-		}
-
-		score := reactions + totalTips
-		ranking = append(ranking, LivestreamRankingEntry{
-			LivestreamID: livestream.ID,
-			Score:        score,
-		})
-	}
-	sort.Sort(ranking)
-
-	var rank int64 = 1
-	for i := len(ranking) - 1; i >= 0; i-- {
-		entry := ranking[i]
-		if entry.LivestreamID == livestreamID {
-			break
-		}
-		rank++
-	}
+	rank++ // zrevrankは0はじまり
 
 	// 視聴者数算出
 	var viewersCount int64
